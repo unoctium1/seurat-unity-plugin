@@ -35,7 +35,6 @@
 Shader "GoogleVR/Seurat/HDRPCaptureEyeDepth" {
 	Properties{
 		[HideInInspector]_BaseColorMap("", 2D) = "white" {}
-		[HideInInspector] _CullMode("__cullmode", Float) = 2.0
 		[HideInInspector]_AlphaCutoffEnable("Alpha Cutoff Enable", Float) = 0.0
 		[HideInInspector]_AlphaCutoff("Alpha Cutoff", Range(0.0, 1.0)) = 0.5
 		[HideInInspector]_Color("", Color) = (1,1,1,1)
@@ -45,7 +44,7 @@ Shader "GoogleVR/Seurat/HDRPCaptureEyeDepth" {
 			Tags { "RenderType" = "Opaque" }
 			Pass {
 
-		Cull[_CullMode]
+		Cull Off
 		CGPROGRAM
 		#pragma vertex vert
 		#pragma fragment frag
