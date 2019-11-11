@@ -20,9 +20,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 using UnityEngine;
-
 #if UNITY_RENDER_PIPELINE_HDRP
 using UnityEngine.Experimental.Rendering.HDPipeline;
+using UnityEngine.Experimental.Rendering;
 #endif
 using UnityEngine.Rendering;
 
@@ -132,7 +132,7 @@ public class OverrideMaterialRenderer : MonoBehaviour
         ExecuteCommandBuffer(ref context, ref cameraBuffer);
 
         //Create material replacement settings.
-        ReplacementMaterialRenderer replacementMaterialRenderer = new ReplacementMaterialRenderer(ref targetMaterial);
+        MaterialReplacer replacementMaterialRenderer = new MaterialReplacer(ref targetMaterial);
 
         //Restore the previous material properties on the replaced material.
         cachedSceneRenderers.SetCachedProperties();

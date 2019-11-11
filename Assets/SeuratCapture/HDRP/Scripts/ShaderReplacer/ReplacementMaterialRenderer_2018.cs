@@ -24,6 +24,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 #if UNITY_RENDER_PIPELINE_HDRP
+using UnityEngine.Experimental.Rendering;
 using UnityEngine.Experimental.Rendering.HDPipeline;
 #endif
 using UnityEngine.Rendering;
@@ -35,13 +36,13 @@ partial struct MaterialReplacer
 #if UNITY_RENDER_PIPELINE_HDRP && UNITY_2018_4
      private DrawRendererSettings drawingSettings;
 
-    public ReplacementMaterialRenderer(ref Material targetMaterial)
+    public MaterialReplacer(ref Material targetMaterial)
     {
-        DrawRendererSettings drawingSettings = new DrawRendererSettings();
+        drawingSettings = new DrawRendererSettings();
         drawingSettings.SetShaderPassName(0, new ShaderPassName("DepthOnly"));
         drawingSettings.SetShaderPassName(1, new ShaderPassName("SRPDefaultUnlit"));
         drawingSettings.SetShaderPassName(2, new ShaderPassName("Vertex"));
-        drawingSettings.SetOverrideMaterial(targetShader, 0); 
+        drawingSettings.SetOverrideMaterial(targetMaterial, 0); 
     }
 
     public void Draw(ref ScriptableRenderContext context, ref HDCamera camera)
@@ -60,11 +61,12 @@ partial struct MaterialReplacer
         return filteringSettings;
     }
 
-    private CullingResults GetCullingResults(ref ScriptableRenderContext context, ref Camera camera)
+    private CullResults GetCullingResults(ref ScriptableRenderContext context, ref Camera camera)
     {
-        CullResults.GetCullingParameters(camera.camera, out ScriptableCullingParameters cullingParameters);
-        CullResults.Cull(ref cullingParameters, context, out cullingResults);
-        return cullingResults;
+        CullResults results = new CullResults();
+        CullResults.GetCullingParameters(camera, out ScriptableCullingParameters cullingParameters);
+        CullResults.Cull(ref cullingParameters, context, ref results);
+        return results;
     }
 #endif
 }
