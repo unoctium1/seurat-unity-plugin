@@ -1,3 +1,9 @@
+# Tutorial 
+Tutorial: https://connect.unity.com/p/google-s-seurat-rendering-hdrp
+
+# Compiled Seurat 
+Compiled Seurat Repo: https://github.com/ddiakopoulos/seura...
+
 # Importing Seurat Meshes Into Unity
 
 Seurat is a scene simplification technology designed to process very complex 3D scenes into a representation that renders efficiently on mobile 6DoF VR systems.
