@@ -7,6 +7,8 @@ public class SeuratAutomator : MonoBehaviour
 {
     [SerializeField, Tooltip("Folders for each headbox will be created in this folder")]
     public string output_folder_;
+    [SerializeField, Tooltip("Path to the executable that runs the seurat pipeline")]
+    public string seurat_executable_path_;
     [SerializeField, Tooltip("If true, all child capture headboxes will have their parameters overriden by the Override settings below")]
     private bool override_all_ = true;
 

@@ -1,8 +1,11 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Threading;
 using UnityEditor;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 // Reflects status updates back to CaptureWindow, and allows CaptureWindow to
 // notify capture/baking tasks to cancel.
@@ -167,6 +170,7 @@ class AutomateWindow : EditorWindow
                     }
                     else
                     {
+                        capture_status_.SendProgress("Beginning capture " + (curr_capture_+1), (curr_capture_+1)/num_captures_);
                         Debug.Log("Moving on to capture " + (curr_capture_ + 1));
                         curr_capture_++;
                     }
@@ -208,6 +212,7 @@ public class SeuratAutomatorEditor : Editor
     public static readonly string kSeuratCaptureDir = "SeuratCapture";
 
     SerializedProperty output_folder_;
+    SerializedProperty exec_path_;
     SerializedProperty samples_;
     SerializedProperty center_resolution_;
     SerializedProperty resolution_;
@@ -221,6 +226,7 @@ public class SeuratAutomatorEditor : Editor
     void OnEnable()
     {
         output_folder_ = serializedObject.FindProperty("output_folder_");
+        exec_path_ = serializedObject.FindProperty("seurat_executable_path_");
         samples_ = serializedObject.FindProperty("samples_per_face_");
         center_resolution_ = serializedObject.FindProperty("center_resolution_");
         resolution_ = serializedObject.FindProperty("resolution_");
@@ -241,6 +247,18 @@ public class SeuratAutomatorEditor : Editor
             if (path.Length != 0)
             {
                 output_folder_.stringValue = path;
+            }
+        }
+
+        EditorGUILayout.PropertyField(exec_path_, new GUIContent(
+         "Executable Path"));
+        if (GUILayout.Button("Choose Executable Location"))
+        {
+            string path = EditorUtility.OpenFilePanel(
+                "Choose Seurat Executable Location", Application.dataPath, "exe");
+            if (path.Length != 0)
+            {
+                exec_path_.stringValue = path;
             }
         }
 
@@ -268,6 +286,16 @@ public class SeuratAutomatorEditor : Editor
             Capture();
         }
         GUI.enabled = true;
+        if (exec_path_.stringValue.Length == 0)
+        {
+            GUI.enabled = false;
+        }
+        if (GUILayout.Button("Run Seurat"))
+        {
+            RunSeurat();
+        }
+        GUI.enabled = true;
+        
 
         serializedObject.ApplyModifiedProperties();
 
@@ -304,12 +332,83 @@ public class SeuratAutomatorEditor : Editor
             capture_builder_[i] = new CaptureBuilder();
             headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
             automator.OverrideHeadbox(headboxes[i]);
-            string output = capture_output_folder + "\\" + (i+1) + "\\input";
+            string output = capture_output_folder + "\\" + (i+1);
+            headboxes[i].output_folder_ = output;
             Directory.CreateDirectory(output);
-            capture_builder_[i].BeginCapture(headboxes[i], output, 1, capture_status_);
+            capture_builder_[i].BeginCapture(headboxes[i], output, 1, capture_status_, "Capture " + (i+1) +": ");
         }
 
         bake_progress_window_.SetupCaptureProcess(headboxes, capture_builder_);
 
+    }
+
+    public void RunSeurat()
+    {
+        SeuratAutomator automate = (SeuratAutomator)target;
+        string capture_output_folder = automate.output_folder_;
+        string exec_path = automate.seurat_executable_path_;
+        int numCaptures = automate.transform.childCount;
+        var thread = new Thread(delegate () { SeuratProcess(numCaptures, capture_output_folder, exec_path); });
+        thread.Start();
+    }
+
+    public static void SeuratProcess(int number_captures, string output_folder, string exec_path)
+    {
+        for (int i = 1; i <= number_captures; i++)
+        {
+            Debug.Log("Beginning processing of capture " + i);
+            Process process = new Process();
+
+            // redirect the output stream of the child process.
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.FileName = exec_path;
+            string input_path = Path.Combine(output_folder, i.ToString(), "input", "manifest.json");
+            string output_path = Path.Combine(output_folder, "output_" + i);
+            process.StartInfo.Arguments = "-input_path=" + input_path + " -output_path=" + output_path + " -premultiply_alpha=false";
+
+            process.OutputDataReceived += OutputHandler;
+
+            int exitCode = -1;
+            //string output = null;
+
+            try
+            {
+                process.Start();
+
+                // do not wait for the child process to exit before
+                // reading to the end of its redirected stream.
+                // process.WaitForExit();
+
+                // read the output stream first and then wait.
+                //output = process.StandardOutput.ReadToEnd();
+                //Debug.Log(output);
+                process.BeginOutputReadLine();
+                process.WaitForExit();
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError("Run error" + e.ToString()); // or throw new Exception
+            }
+            finally
+            {
+                exitCode = process.ExitCode;
+
+                process.Dispose();
+                process = null;
+                Debug.Log("Finished processing capture " + i + " with exit code " + exitCode);
+            }
+        }
+    }
+
+    private static void OutputHandler(object sendingProcess,
+            DataReceivedEventArgs outLine)
+    {
+        // Collect the sort command output.
+        if (!string.IsNullOrEmpty(outLine.Data))
+        {
+            Debug.Log(outLine.Data);
+        }
     }
 }

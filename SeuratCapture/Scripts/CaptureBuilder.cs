@@ -170,7 +170,7 @@ public class CaptureBuilder {
     return Mathf.Min(reversed_digits * inv_base_n, 1.0f);
   }
 
-  public void BeginCapture(CaptureHeadbox headbox, string capture_dir, int max_frames, CaptureStatus status_interface) {
+  public void BeginCapture(CaptureHeadbox headbox, string capture_dir, int max_frames, CaptureStatus status_interface, string to_prepend="") {
     start_time_ = Time.realtimeSinceStartup;
 
     headbox_ = headbox;
@@ -180,7 +180,7 @@ public class CaptureBuilder {
     capture_frame_ = 0;
     status_interface_ = status_interface;
     max_frames_ = max_frames;
-    status_interface_.SendProgress("Capturing Images...", 0.0f);
+    status_interface_.SendProgress(to_prepend + "Capturing Images...", 0.0f);
     List<Vector3> samples = new List<Vector3>();
 
     // Use Hammersly point set to distribute samples.

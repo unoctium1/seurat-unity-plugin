@@ -79,8 +79,26 @@ public class CaptureHeadbox : MonoBehaviour {
   [Tooltip("Root destination folder for capture data; empty instructs the capture to use an automatically-generated, unique folder in the project temp folder.")]
   public string output_folder_ = "";
 
-  // Indicates location of most-recent capture artifacts.
-  public string last_output_dir_;
+    [Header("Seurat Pipeline Settings")]
+    [Tooltip("Executable for the Seurat pipeline executable")]
+    public string seurat_exec_ = "";
+    [Tooltip("Destination folder for Seurat output mesh")]
+    public string seurat_output_folder_ = "";
+    [Tooltip("Seurat Output Name")]
+    public string seurat_output_name_ = "";
+    [Tooltip("Seurat Commandline Params")]
+    public SeuratParams options = new SeuratParams
+    {
+        //Initialize with default values - note that premultiply_alphas is by default true, but Unity expects false
+        premultiply_alphas = false,
+        gamma = 1.0f,
+        triangle_count = 72000,
+        skybox_radius = 200.0f,
+        fast_preview = false
+    };
+
+    // Indicates location of most-recent capture artifacts.
+    public string last_output_dir_;
 
   private Camera color_camera_;
   private CaptureBuilder capture_;
@@ -156,4 +174,24 @@ public class CaptureHeadbox : MonoBehaviour {
     Gizmos.color = Color.blue;
     Gizmos.DrawWireCube(Vector3.zero, size_);
   }
+}
+
+[System.Serializable]
+public struct SeuratParams
+{
+    [Tooltip("Determines whether output textures use premultiplied alpha. Unity expects true, Butterfly expects false")]
+    public bool premultiply_alphas;
+    [Tooltip("Gamma-correction exponent")]
+    public float gamma;
+    [Tooltip("The maximum number of triangles to generate")]
+    public int triangle_count;
+    [Tooltip("Half the side-length of the origin-centered skybox to clamp distant geometry. 0.0 indicates no skybox clamping should be performed")]
+    public float skybox_radius;
+    [Tooltip("Prefer speed over quality")]
+    public bool fast_preview;
+
+    public string GetArgs()
+    {
+        return " -gamma=" + gamma + " -premultiply_alpha=" + (premultiply_alphas ? "true" : "false") + " -triangle_count=" + triangle_count + " -skybox_radius=" + skybox_radius + " -fast_preview=" + (fast_preview ? "true" : "false");
+    }
 }
