@@ -229,8 +229,11 @@ public class CaptureHeadboxEditor : Editor {
   SerializedProperty dynamic_range_;
   SerializedProperty last_output_dir_;
 	SerializedProperty options_;
+	SerializedProperty use_cache_;
+	SerializedProperty cache_folder_;
+	SerializedProperty asset_path_;
 
-  EditorBakeStatus capture_status_;
+	EditorBakeStatus capture_status_;
   CaptureWindow bake_progress_window_;
   CaptureBuilder capture_builder_;
 	SeuratPipelineRunner pipeline_runner_;
@@ -259,6 +262,9 @@ public class CaptureHeadboxEditor : Editor {
 	dynamic_range_ = serializedObject.FindProperty("dynamic_range_");
 	last_output_dir_ = serializedObject.FindProperty("last_output_dir_");
 		options_ = serializedObject.FindProperty("options");
+		use_cache_ = serializedObject.FindProperty("use_cache_");
+		cache_folder_ = serializedObject.FindProperty("cache_folder_");
+		asset_path_ = serializedObject.FindProperty("asset_path_");
   }
 
   public override void OnInspectorGUI() {
@@ -311,9 +317,45 @@ public class CaptureHeadboxEditor : Editor {
 		}
 		EditorGUILayout.PropertyField(output_name_, new GUIContent(
 	  "Seurat Pipeline Output Name"));
+
+		EditorGUILayout.PropertyField(use_cache_, new GUIContent("Use Geometry Cache"));
+		if (use_cache_.boolValue)
+		{
+			EditorGUILayout.PropertyField(cache_folder_, new GUIContent(
+		  "Cache Folder"));
+			if (GUILayout.Button("Choose Folder for Geometry cache"))
+			{
+				string path = EditorUtility.SaveFolderPanel(
+				  "Choose Cache Folder", cache_folder_.stringValue, "");
+				if (path.Length != 0)
+				{
+					cache_folder_.stringValue = path;
+				}
+			}
+		}
+
 		EditorGUILayout.PropertyField(options_, new GUIContent(
 	  "Commandline Options"), true);
 
+		EditorGUILayout.PropertyField(asset_path_, new GUIContent(
+		  "Folder for Import"));
+		if (GUILayout.Button("Choose Folder to Import Model & Tex to"))
+		{
+			string path = EditorUtility.SaveFolderPanel(
+			  "Choose Import Location", Application.dataPath, "");
+			if (path.Length != 0)
+			{
+				if (path.StartsWith(Application.dataPath))
+				{
+					asset_path_.stringValue = path.Substring(Application.dataPath.Length);
+				}
+				else
+				{
+					Debug.LogError("Path must be in assets folder");
+				}
+			}
+		}
+		
 		if (capture_status_ != null)
 	{
 	  GUI.enabled = false;
@@ -340,6 +382,10 @@ public class CaptureHeadboxEditor : Editor {
 			StopSeurat();
 		}
 		GUI.enabled = true;
+		if(GUILayout.Button("Import seurat outputs"))
+		{
+			ImportAssets();
+		}
 
 
 		serializedObject.ApplyModifiedProperties();
@@ -389,11 +435,19 @@ public class CaptureHeadboxEditor : Editor {
 		if (seurat_output_folder.Length <= 0)
 		{
 			seurat_output_folder = FileUtil.GetUniqueTempPathInProject();
+			headbox.seurat_output_folder_ = seurat_output_folder;
+		}
+		if (headbox.use_cache_)
+		{
+			string cache_folder_ = headbox.cache_folder_;
+			if(cache_folder_.Length <= 0)
+			{
+				cache_folder_ = FileUtil.GetUniqueTempPathInProject();
+			}
+			Directory.CreateDirectory(cache_folder_);
 		}
 		Directory.CreateDirectory(seurat_output_folder);
-		string input = Path.Combine(headbox.output_folder_, "manifest.json");
-		string output = Path.Combine(seurat_output_folder, headbox.seurat_output_name_);
-		string args = "-input_path=" + input + " -output_path=" + output + headbox.options.GetArgs();
+		string args = headbox.GetArgString();
 
 		status_interface_ = new SeuratRunnerStatus();
 		pipeline_runner_ = new SeuratPipelineRunner(
@@ -412,6 +466,13 @@ public class CaptureHeadboxEditor : Editor {
 			pipeline_runner_ = null;
 			status_interface_ = null;
 		}
+	}
+
+	public void ImportAssets()
+	{
+		CaptureHeadbox headbox = (CaptureHeadbox)target;
+
+		headbox.ImportSeurat();
 	}
   
 }

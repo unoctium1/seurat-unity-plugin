@@ -16,12 +16,12 @@ public class SeuratPipelineRunner
     string args;
     string seurat_exec_path;
 
-    private Process process;
-    private Thread runningThread;
-    private static PipelineStatus status;
+    protected Process process;
+    protected Thread runningThread;
+    protected static PipelineStatus status;
 
-    private bool hasStarted;
-    private bool hasFinished = false;
+    protected bool hasStarted;
+    protected bool hasFinished = false;
 
     public int exitCode;
 
@@ -46,16 +46,14 @@ public class SeuratPipelineRunner
         process.StartInfo.RedirectStandardError = true;
         process.StartInfo.CreateNoWindow = true;
         process.StartInfo.FileName = seurat_exec_path;
-        //string input = Path.Combine(input_dir, "manifest.json");
         process.StartInfo.Arguments = args;
-        //process.StartInfo.Arguments = "-input_path=" + input + " -output_path=" + output_target + " -premultiply_alpha=false";
 
         process.OutputDataReceived += OutputHandler;
         process.ErrorDataReceived += ErrorHandler;
 
     }
 
-    public void Run()
+    public virtual void Run()
     {
         hasStarted = true;
         status.SendMessage("Beginning process: " + process.StartInfo.FileName + " with arguments " + process.StartInfo.Arguments);
@@ -76,7 +74,7 @@ public class SeuratPipelineRunner
         }
     }
 
-    private void RunProcess(PipelineStatus status)
+    public int RunProcess(PipelineStatus status)
     {
         try
         {
@@ -111,6 +109,7 @@ public class SeuratPipelineRunner
             hasFinished = true;
             process = null;
         }
+        return exitCode;
     }
 
     private static void OutputHandler(object sendingProcess,

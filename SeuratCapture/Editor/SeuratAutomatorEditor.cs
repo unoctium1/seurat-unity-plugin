@@ -218,10 +218,26 @@ public class SeuratAutomatorEditor : Editor
     SerializedProperty resolution_;
     SerializedProperty dynamic_range_;
     SerializedProperty override_all_;
+    SerializedProperty use_cache_;
+    SerializedProperty options_;
+    SerializedProperty asset_path_;
 
     AutomatorStatus capture_status_;
     AutomateWindow bake_progress_window_;
     CaptureBuilder[] capture_builder_;
+    SeuratPipelineCollectionRunner collection_runner_;
+    SeuratRunnerStatus runner_status_;
+
+    private bool IsSeuratRunning
+    {
+        get
+        {
+            if (collection_runner_ == null)
+                return false;
+            else
+                return collection_runner_.IsProcessRunning();
+        }
+    }
 
     void OnEnable()
     {
@@ -232,6 +248,9 @@ public class SeuratAutomatorEditor : Editor
         resolution_ = serializedObject.FindProperty("resolution_");
         dynamic_range_ = serializedObject.FindProperty("dynamic_range_");
         override_all_ = serializedObject.FindProperty("override_all_");
+        use_cache_ = serializedObject.FindProperty("use_cache_");
+        options_ = serializedObject.FindProperty("options");
+        asset_path_ = serializedObject.FindProperty("asset_path_");
     }
 
     public override void OnInspectorGUI()
@@ -250,18 +269,6 @@ public class SeuratAutomatorEditor : Editor
             }
         }
 
-        EditorGUILayout.PropertyField(exec_path_, new GUIContent(
-         "Executable Path"));
-        if (GUILayout.Button("Choose Executable Location"))
-        {
-            string path = EditorUtility.OpenFilePanel(
-                "Choose Seurat Executable Location", Application.dataPath, "exe");
-            if (path.Length != 0)
-            {
-                exec_path_.stringValue = path;
-            }
-        }
-
         EditorGUILayout.PropertyField(override_all_, new GUIContent(
             "Override All"));
 
@@ -277,6 +284,40 @@ public class SeuratAutomatorEditor : Editor
               "Dynamic Range"));
         }
 
+        EditorGUILayout.PropertyField(exec_path_, new GUIContent(
+         "Executable Path"));
+        if (GUILayout.Button("Choose Executable Location"))
+        {
+            string path = EditorUtility.OpenFilePanel(
+                "Choose Seurat Executable Location", Application.dataPath, "exe");
+            if (path.Length != 0)
+            {
+                exec_path_.stringValue = path;
+            }
+        }
+        EditorGUILayout.PropertyField(use_cache_, new GUIContent("Use Geometry Cache"));
+        EditorGUILayout.PropertyField(options_, new GUIContent(
+      "Commandline Options"), true);
+
+        EditorGUILayout.PropertyField(asset_path_, new GUIContent(
+          "Folder for Import"));
+        if (GUILayout.Button("Choose Folder to Import Model & Tex to"))
+        {
+            string path = EditorUtility.SaveFolderPanel(
+              "Choose Import Location", Application.dataPath, "");
+            if (path.Length != 0)
+            {
+                if (path.StartsWith(Application.dataPath))
+                {
+                    asset_path_.stringValue = path.Substring(Application.dataPath.Length);
+                }
+                else
+                {
+                    Debug.LogError("Path must be in assets folder");
+                }
+            }
+        }
+
         if (capture_status_ != null)
         {
             GUI.enabled = false;
@@ -286,7 +327,7 @@ public class SeuratAutomatorEditor : Editor
             Capture();
         }
         GUI.enabled = true;
-        if (exec_path_.stringValue.Length == 0)
+        if (IsSeuratRunning || exec_path_.stringValue.Length == 0)
         {
             GUI.enabled = false;
         }
@@ -295,7 +336,20 @@ public class SeuratAutomatorEditor : Editor
             RunSeurat();
         }
         GUI.enabled = true;
-        
+        if (!IsSeuratRunning)
+        {
+            GUI.enabled = false;
+        }
+        if (GUILayout.Button("Stop Seurat"))
+        {
+            StopSeurat();
+        }
+        GUI.enabled = true;
+        if(GUILayout.Button("Import All"))
+        {
+            ImportAll();
+        }
+
 
         serializedObject.ApplyModifiedProperties();
 
@@ -305,6 +359,12 @@ public class SeuratAutomatorEditor : Editor
             bake_progress_window_ = null;
             capture_builder_ = null;
             capture_status_ = null;
+        }
+        if (!IsSeuratRunning && collection_runner_ != null)
+        {
+            collection_runner_.InterruptProcess();
+            collection_runner_ = null;
+            runner_status_ = null;
         }
     }
 
@@ -344,71 +404,66 @@ public class SeuratAutomatorEditor : Editor
 
     public void RunSeurat()
     {
-        SeuratAutomator automate = (SeuratAutomator)target;
-        string capture_output_folder = automate.output_folder_;
-        string exec_path = automate.seurat_executable_path_;
-        int numCaptures = automate.transform.childCount;
-        var thread = new Thread(delegate () { SeuratProcess(numCaptures, capture_output_folder, exec_path); });
-        thread.Start();
+        SeuratAutomator automator = (SeuratAutomator)target;
+        string capture_output_folder = automator.output_folder_;
+        string exec_path = automator.seurat_executable_path_;
+        int numCaptures = automator.transform.childCount;
+        runner_status_ = new SeuratRunnerStatus();
+
+        CaptureHeadbox[] headboxes = new CaptureHeadbox[numCaptures];
+        SeuratPipelineRunner[] runners = new SeuratPipelineRunner[numCaptures];
+
+        for (int i = 0; i < numCaptures; i++)
+        {
+            headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
+            headboxes[i].output_folder_ = Path.Combine(capture_output_folder, (i + 1).ToString());
+            headboxes[i].seurat_output_folder_ = capture_output_folder;
+            Directory.CreateDirectory(capture_output_folder);
+            headboxes[i].seurat_output_name_ = "capture_" + (i + 1);
+            if (automator.use_cache_)
+            {
+                headboxes[i].use_cache_ = true;
+                string cache_path = Path.Combine(capture_output_folder, "capture_" + (i + 1) + "_cache");
+                headboxes[i].cache_folder_ = cache_path;
+                Directory.CreateDirectory(cache_path);
+            }
+            automator.OverrideParams(headboxes[i]);
+            string arg = headboxes[i].GetArgString();
+            runners[i] = new SeuratPipelineRunner(arg, exec_path, runner_status_);
+        }
+        Debug.Log("All processes set up");
+        Debug.Log("Beginning seurat captures...");
+        collection_runner_ = new SeuratPipelineCollectionRunner(runners, runner_status_);
+
+        collection_runner_.Run();
     }
 
-    public static void SeuratProcess(int number_captures, string output_folder, string exec_path)
+    public void ImportAll()
     {
-        for (int i = 1; i <= number_captures; i++)
+        SeuratAutomator automator = (SeuratAutomator)target;
+        string output_folder_ = automator.output_folder_;
+        int numCaptures = automator.transform.childCount;
+
+        CaptureHeadbox[] headboxes = new CaptureHeadbox[numCaptures];
+
+        for (int i = 0; i < numCaptures; i++)
         {
-            Debug.Log("Beginning processing of capture " + i);
-            Process process = new Process();
-
-            // redirect the output stream of the child process.
-            process.StartInfo.UseShellExecute = false;
-            process.StartInfo.RedirectStandardOutput = true;
-            process.StartInfo.CreateNoWindow = true;
-            process.StartInfo.FileName = exec_path;
-            string input_path = Path.Combine(output_folder, i.ToString(), "input", "manifest.json");
-            string output_path = Path.Combine(output_folder, "output_" + i);
-            process.StartInfo.Arguments = "-input_path=" + input_path + " -output_path=" + output_path + " -premultiply_alpha=false";
-
-            process.OutputDataReceived += OutputHandler;
-
-            int exitCode = -1;
-            //string output = null;
-
-            try
-            {
-                process.Start();
-
-                // do not wait for the child process to exit before
-                // reading to the end of its redirected stream.
-                // process.WaitForExit();
-
-                // read the output stream first and then wait.
-                //output = process.StandardOutput.ReadToEnd();
-                //Debug.Log(output);
-                process.BeginOutputReadLine();
-                process.WaitForExit();
-            }
-            catch (System.Exception e)
-            {
-                Debug.LogError("Run error" + e.ToString()); // or throw new Exception
-            }
-            finally
-            {
-                exitCode = process.ExitCode;
-
-                process.Dispose();
-                process = null;
-                Debug.Log("Finished processing capture " + i + " with exit code " + exitCode);
-            }
+            headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
+            headboxes[i].seurat_output_name_ = "capture_" + (i + 1);
+            headboxes[i].seurat_output_folder_ = output_folder_;
+            headboxes[i].asset_path_ = automator.asset_path_;
+            headboxes[i].ImportSeurat();
         }
     }
 
-    private static void OutputHandler(object sendingProcess,
-            DataReceivedEventArgs outLine)
+    public void StopSeurat()
     {
-        // Collect the sort command output.
-        if (!string.IsNullOrEmpty(outLine.Data))
+        if (IsSeuratRunning)
         {
-            Debug.Log(outLine.Data);
+            collection_runner_.InterruptProcess();
+            collection_runner_ = null;
+            runner_status_ = null;
         }
     }
+
 }

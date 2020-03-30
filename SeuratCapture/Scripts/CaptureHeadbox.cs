@@ -23,61 +23,59 @@ using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
-using System.Collections.Generic;
-using System;
 using System.IO;
 
 public enum CubeFaceResolution
 {
-  k512 = 512,
-  k1024 = 1024,
-  k1536 = 1536,
-  k2048 = 2048,
-  k4096 = 4096,
-  k8192 = 8192
+k512 = 512,
+k1024 = 1024,
+k1536 = 1536,
+k2048 = 2048,
+k4096 = 4096,
+k8192 = 8192
 }
 
 public enum PositionSampleCount {
-  k2 = 2,
-  k4 = 4,
-  k8 = 8,
-  k16 = 16,
-  k32 = 32,
-  k64 = 64,
-  k128 = 128,
-  k256 = 256,
+k2 = 2,
+k4 = 4,
+k8 = 8,
+k16 = 16,
+k32 = 32,
+k64 = 64,
+k128 = 128,
+k256 = 256,
 }
 
 public enum CaptureDynamicRange {
-  // Standard (or low) dynamic range, e.g. sRGB.
-  kSDR = 0,
-  // High dynamic range with medium precision floating point data; requires half float render targets.
-  kHDR16 = 1,
-  // High dynamic range with full float precision render targets.
-  kHDR = 2,
+// Standard (or low) dynamic range, e.g. sRGB.
+kSDR = 0,
+// High dynamic range with medium precision floating point data; requires half float render targets.
+kHDR16 = 1,
+// High dynamic range with full float precision render targets.
+kHDR = 2,
 }
 
 [ExecuteInEditMode]
 [RequireComponent(typeof(Camera))]
 public class CaptureHeadbox : MonoBehaviour {
-  // -- Capture Settings --
+    // -- Capture Settings --
 
-  [Tooltip("The dimensions of the headbox.")]
-  public Vector3 size_ = Vector3.one;
-  [Tooltip("The number of samples per face of the headbox.")]
-  public PositionSampleCount samples_per_face_ = PositionSampleCount.k32;
-  [Tooltip("The resolution of the center image, taken at the camera position at the center of the headbox. This should be 4x higher than the resolution of the remaining samples, for antialiasing.")]
-  public CubeFaceResolution center_resolution_ = CubeFaceResolution.k4096;
-  [Tooltip("The resolution of all samples other than the center.")]
-  public CubeFaceResolution resolution_ = CubeFaceResolution.k1024;
+    [Tooltip("The dimensions of the headbox.")]
+    public Vector3 size_ = Vector3.one;
+    [Tooltip("The number of samples per face of the headbox.")]
+    public PositionSampleCount samples_per_face_ = PositionSampleCount.k32;
+    [Tooltip("The resolution of the center image, taken at the camera position at the center of the headbox. This should be 4x higher than the resolution of the remaining samples, for antialiasing.")]
+    public CubeFaceResolution center_resolution_ = CubeFaceResolution.k4096;
+    [Tooltip("The resolution of all samples other than the center.")]
+    public CubeFaceResolution resolution_ = CubeFaceResolution.k1024;
 
-  [Tooltip("Capture in standard (SDR) or high dynamic range (HDR). HDR requires floating-point render targets, the Camera Component have allow HDR enabled, and enables EXR output.")]
-  public CaptureDynamicRange dynamic_range_ = CaptureDynamicRange.kSDR;
+    [Tooltip("Capture in standard (SDR) or high dynamic range (HDR). HDR requires floating-point render targets, the Camera Component have allow HDR enabled, and enables EXR output.")]
+    public CaptureDynamicRange dynamic_range_ = CaptureDynamicRange.kSDR;
 
-  // -- Processing Settings --
+    // -- Processing Settings --
 
-  [Tooltip("Root destination folder for capture data; empty instructs the capture to use an automatically-generated, unique folder in the project temp folder.")]
-  public string output_folder_ = "";
+    [Tooltip("Root destination folder for capture data; empty instructs the capture to use an automatically-generated, unique folder in the project temp folder.")]
+    public string output_folder_ = "";
 
     [Header("Seurat Pipeline Settings")]
     [Tooltip("Executable for the Seurat pipeline executable")]
@@ -86,6 +84,10 @@ public class CaptureHeadbox : MonoBehaviour {
     public string seurat_output_folder_ = "";
     [Tooltip("Seurat Output Name")]
     public string seurat_output_name_ = "";
+    [Tooltip("If true, store output geometry in a cache. Speeds up repeated processes, good for iterating on texture settings.")]
+    public bool use_cache_ = false;
+    [Tooltip("Folder to store geometry artifacts in")]
+    public string cache_folder_;
     [Tooltip("Seurat Commandline Params")]
     public SeuratParams options = new SeuratParams
     {
@@ -97,101 +99,116 @@ public class CaptureHeadbox : MonoBehaviour {
         fast_preview = false
     };
 
+    [Header("Import Settings")]
+    [Tooltip("Indicates where to copy seurat mesh & texture to")]
+    public string asset_path_;
+
     // Indicates location of most-recent capture artifacts.
     public string last_output_dir_;
 
-  private Camera color_camera_;
-  private CaptureBuilder capture_;
+    private Camera color_camera_;
+    private CaptureBuilder capture_;
 
-  public Camera ColorCamera {
-    get {
-      if (color_camera_ == null) {
-        color_camera_ = GetComponent<Camera>();
-      }
-      return color_camera_;
-    }
-  }
-
-  void Update() {
-    if (IsCapturing()) {
-      RunCapture();
+    public Camera ColorCamera {
+        get {
+            if (color_camera_ == null) {
+                color_camera_ = GetComponent<Camera>();
+            }
+            return color_camera_;
+        }
     }
 
-    if (Input.GetKeyDown(KeyCode.BackQuote)) {
-      ToggleCaptureMode();
-    }
-  }
-
-  bool IsCapturing() {
-    return capture_ != null;
-  }
-
-  void RunCapture() {
-    Debug.Log("Capturing headbox samples...", this);
-    capture_.CaptureAllHeadboxSamples();
-    if (capture_.IsCaptureComplete()) {
-      StopCapture();
-    }
-  }
-
-  void ToggleCaptureMode() {
-    if (IsCapturing()) {
-      StopCapture();
-    } else {
-      StartCapture();
-    }
-  }
-
-  void StartCapture() {
-    Debug.Log("Capture start - temporarily setting fixed framerate.", this);
-    capture_ = new CaptureBuilder();
-
-    string capture_output_folder = output_folder_;
-    if (capture_output_folder.Length <= 0) {
-      capture_output_folder = FileUtil.GetUniqueTempPathInProject();
-    }
-    Directory.CreateDirectory(capture_output_folder);
-    capture_.BeginCapture(this, capture_output_folder, 1, new CaptureStatus());
-
-    // See Time.CaptureFramerate example, e.g. here:
-    // https://docs.unity3d.com/ScriptReference/Time-captureFramerate.html
-    Time.captureFramerate = 60;
-  }
-
-  void StopCapture() {
-    Debug.Log("Capture stop", this);
-    if (capture_ != null) {
-      capture_.EndCapture();
-    }
-    capture_ = null;
-    Time.captureFramerate = 0;
-  }
-
-  void OnDrawGizmos()
-  {
-    // The headbox is defined in camera coordinates.
-    Gizmos.matrix = transform.localToWorldMatrix;
-    Gizmos.color = Color.blue;
-    Gizmos.DrawWireCube(Vector3.zero, size_);
-  }
-}
-
-[System.Serializable]
-public struct SeuratParams
-{
-    [Tooltip("Determines whether output textures use premultiplied alpha. Unity expects true, Butterfly expects false")]
-    public bool premultiply_alphas;
-    [Tooltip("Gamma-correction exponent")]
-    public float gamma;
-    [Tooltip("The maximum number of triangles to generate")]
-    public int triangle_count;
-    [Tooltip("Half the side-length of the origin-centered skybox to clamp distant geometry. 0.0 indicates no skybox clamping should be performed")]
-    public float skybox_radius;
-    [Tooltip("Prefer speed over quality")]
-    public bool fast_preview;
-
-    public string GetArgs()
+#if UNITY_EDITOR
+    public string GetArgString()
     {
-        return " -gamma=" + gamma + " -premultiply_alpha=" + (premultiply_alphas ? "true" : "false") + " -triangle_count=" + triangle_count + " -skybox_radius=" + skybox_radius + " -fast_preview=" + (fast_preview ? "true" : "false");
+        string input = Path.Combine(output_folder_, "manifest.json");
+        string output = Path.Combine(seurat_output_folder_, seurat_output_name_);
+        return "-input_path=" + input + " -output_path=" + (use_cache_ ? output + " -cache_path=" + cache_folder_ + options.GetArgs() : options.GetArgs());
+    }
+
+    public void ImportSeurat()
+    {
+        string model_name = seurat_output_name_ + ".obj";
+        string tex_name = seurat_output_name_ + ".png";
+        string model_path = Path.Combine(seurat_output_folder_, model_name);
+        string png_path = Path.Combine(seurat_output_folder_, tex_name);
+        string target_model_path = Path.Combine(asset_path_,model_name);
+        string target_texture_path = Path.Combine(asset_path_, tex_name);
+        
+        FileUtil.CopyFileOrDirectory(model_path, Application.dataPath + target_model_path);
+        FileUtil.CopyFileOrDirectory(png_path, Application.dataPath + target_texture_path);
+
+        AssetDatabase.ImportAsset("Assets" + target_model_path);
+        AssetDatabase.ImportAsset("Assets" + target_texture_path);
+        
+    }
+
+    void Update() {
+        if (IsCapturing()) {
+            RunCapture();
+        }
+
+        if (Input.GetKeyDown(KeyCode.BackQuote)) {
+            ToggleCaptureMode();
+        }
+    }
+
+    bool IsCapturing() {
+        return capture_ != null;
+    }
+
+    void RunCapture() {
+        Debug.Log("Capturing headbox samples...", this);
+        capture_.CaptureAllHeadboxSamples();
+        if (capture_.IsCaptureComplete()) {
+            StopCapture();
+        }
+    }
+
+    void ToggleCaptureMode() {
+        if (IsCapturing()) {
+            StopCapture();
+        } else {
+            StartCapture();
+        }
+    }
+
+
+
+    void StartCapture() {
+        Debug.Log("Capture start - temporarily setting fixed framerate.", this);
+        capture_ = new CaptureBuilder();
+
+        string capture_output_folder = output_folder_;
+        if (capture_output_folder.Length <= 0) {
+            capture_output_folder = FileUtil.GetUniqueTempPathInProject();
+        }
+        Directory.CreateDirectory(capture_output_folder);
+        capture_.BeginCapture(this, capture_output_folder, 1, new CaptureStatus());
+
+        // See Time.CaptureFramerate example, e.g. here:
+        // https://docs.unity3d.com/ScriptReference/Time-captureFramerate.html
+        Time.captureFramerate = 60;
+    }
+
+    void StopCapture() {
+        Debug.Log("Capture stop", this);
+        if (capture_ != null) {
+            capture_.EndCapture();
+        }
+        capture_ = null;
+        Time.captureFramerate = 0;
+    }
+
+#endif
+
+    void OnDrawGizmos()
+    {
+        // The headbox is defined in camera coordinates.
+        Gizmos.matrix = transform.localToWorldMatrix;
+        Gizmos.color = Color.blue;
+        Gizmos.DrawWireCube(Vector3.zero, size_);
     }
 }
+
+

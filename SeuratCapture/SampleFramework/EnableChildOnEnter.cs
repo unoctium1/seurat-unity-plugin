@@ -21,7 +21,6 @@ public class EnableChildOnEnter : MonoBehaviour
     {
         if (!child.activeInHierarchy && col.bounds.Contains(playerObj.transform.position)){
             child.SetActive(true);
-            //Debug.Log("here");
         }
         else if(child.activeInHierarchy && !col.bounds.Contains(playerObj.transform.position))
         {
