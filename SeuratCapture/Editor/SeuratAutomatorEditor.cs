@@ -1,4 +1,5 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -221,12 +222,22 @@ public class SeuratAutomatorEditor : Editor
     SerializedProperty use_cache_;
     SerializedProperty options_;
     SerializedProperty asset_path_;
+    SerializedProperty objects_;
+    SerializedProperty textures_;
+    SerializedProperty headbox_prefab_;
+    SerializedProperty seurat_shader_;
+    SerializedProperty prefab_path_;
 
     AutomatorStatus capture_status_;
     AutomateWindow bake_progress_window_;
     CaptureBuilder[] capture_builder_;
     SeuratPipelineCollectionRunner collection_runner_;
     SeuratRunnerStatus runner_status_;
+
+    bool draw_capture_;
+    bool draw_pipeline_;
+    bool draw_import_;
+    bool draw_scenebuilder_;
 
     private bool IsSeuratRunning
     {
@@ -251,12 +262,43 @@ public class SeuratAutomatorEditor : Editor
         use_cache_ = serializedObject.FindProperty("use_cache_");
         options_ = serializedObject.FindProperty("options");
         asset_path_ = serializedObject.FindProperty("asset_path_");
+        objects_ = serializedObject.FindProperty("cur_meshes_");
+        textures_ = serializedObject.FindProperty("cur_tex_");
+        headbox_prefab_ = serializedObject.FindProperty("headbox_prefab_");
+        seurat_shader_ = serializedObject.FindProperty("seurat_shader_");
+        prefab_path_ = serializedObject.FindProperty("prefab_path_");
     }
 
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
 
+        draw_capture_ = Utility.DrawMethodGroup(draw_capture_, "Capture Settings", DrawCaptureSettings);
+        draw_pipeline_ = Utility.DrawMethodGroup(draw_pipeline_, "Pipeline Settings", DrawPipelineSettings);
+        draw_import_ = Utility.DrawMethodGroup(draw_import_, "Import Settings", DrawImportSettings);
+        draw_scenebuilder_ = Utility.DrawMethodGroup(draw_scenebuilder_, "Scene Builder Settings", DrawSceneBuilderSettings);
+
+        DrawButtons();
+
+        serializedObject.ApplyModifiedProperties();
+
+        if (bake_progress_window_ != null && bake_progress_window_.IsComplete())
+        {
+            bake_progress_window_.Close();
+            bake_progress_window_ = null;
+            capture_builder_ = null;
+            capture_status_ = null;
+        }
+        if (!IsSeuratRunning && collection_runner_ != null)
+        {
+            collection_runner_.InterruptProcess();
+            collection_runner_ = null;
+            runner_status_ = null;
+        }
+    }
+
+    private void DrawCaptureSettings()
+    {
         EditorGUILayout.PropertyField(output_folder_, new GUIContent(
           "Output Folder"));
         if (GUILayout.Button("Choose Output Folder"))
@@ -268,7 +310,6 @@ public class SeuratAutomatorEditor : Editor
                 output_folder_.stringValue = path;
             }
         }
-
         EditorGUILayout.PropertyField(override_all_, new GUIContent(
             "Override All"));
 
@@ -283,7 +324,10 @@ public class SeuratAutomatorEditor : Editor
             EditorGUILayout.PropertyField(dynamic_range_, new GUIContent(
               "Dynamic Range"));
         }
+    }
 
+    private void DrawPipelineSettings()
+    {
         EditorGUILayout.PropertyField(exec_path_, new GUIContent(
          "Executable Path"));
         if (GUILayout.Button("Choose Executable Location"))
@@ -298,7 +342,10 @@ public class SeuratAutomatorEditor : Editor
         EditorGUILayout.PropertyField(use_cache_, new GUIContent("Use Geometry Cache"));
         EditorGUILayout.PropertyField(options_, new GUIContent(
       "Commandline Options"), true);
+    }
 
+    private void DrawImportSettings()
+    {
         EditorGUILayout.PropertyField(asset_path_, new GUIContent(
           "Folder for Import"));
         if (GUILayout.Button("Choose Folder to Import Model & Tex to"))
@@ -318,6 +365,24 @@ public class SeuratAutomatorEditor : Editor
             }
         }
 
+        EditorGUILayout.PropertyField(objects_, new GUIContent(
+            "Imported Meshes"), true);
+        EditorGUILayout.PropertyField(textures_, new GUIContent(
+            "Imported Textures"), true);
+    }
+
+    private void DrawSceneBuilderSettings()
+    {
+        EditorGUILayout.PropertyField(headbox_prefab_, new GUIContent(
+            "Headbox Prefab"));
+        EditorGUILayout.PropertyField(seurat_shader_, new GUIContent(
+            "Material Shader"));
+        EditorGUILayout.PropertyField(prefab_path_, new GUIContent(
+            "Relative Path"));
+    }
+
+    private void DrawButtons()
+    {
         if (capture_status_ != null)
         {
             GUI.enabled = false;
@@ -345,26 +410,13 @@ public class SeuratAutomatorEditor : Editor
             StopSeurat();
         }
         GUI.enabled = true;
-        if(GUILayout.Button("Import All"))
+        if (GUILayout.Button("Import All"))
         {
             ImportAll();
         }
-
-
-        serializedObject.ApplyModifiedProperties();
-
-        if (bake_progress_window_ != null && bake_progress_window_.IsComplete())
+        if (GUILayout.Button("Build Seurat Captures in Scene"))
         {
-            bake_progress_window_.Close();
-            bake_progress_window_ = null;
-            capture_builder_ = null;
-            capture_status_ = null;
-        }
-        if (!IsSeuratRunning && collection_runner_ != null)
-        {
-            collection_runner_.InterruptProcess();
-            collection_runner_ = null;
-            runner_status_ = null;
+            BuildScene();
         }
     }
 
@@ -394,6 +446,7 @@ public class SeuratAutomatorEditor : Editor
             automator.OverrideHeadbox(headboxes[i]);
             string output = capture_output_folder + "\\" + (i+1);
             headboxes[i].output_folder_ = output;
+            EditorUtility.SetDirty(headboxes[i]);
             Directory.CreateDirectory(output);
             capture_builder_[i].BeginCapture(headboxes[i], output, 1, capture_status_, "Capture " + (i+1) +": ");
         }
@@ -429,6 +482,7 @@ public class SeuratAutomatorEditor : Editor
             }
             automator.OverrideParams(headboxes[i]);
             string arg = headboxes[i].GetArgString();
+            EditorUtility.SetDirty(headboxes[i]);
             runners[i] = new SeuratPipelineRunner(arg, exec_path, runner_status_);
         }
         Debug.Log("All processes set up");
@@ -445,15 +499,56 @@ public class SeuratAutomatorEditor : Editor
         int numCaptures = automator.transform.childCount;
 
         CaptureHeadbox[] headboxes = new CaptureHeadbox[numCaptures];
+        automator.cur_meshes_ = new GameObject[numCaptures];
+        automator.cur_tex_ = new Texture2D[numCaptures];
 
+        Debug.Log("Setting up all headboxes...");
         for (int i = 0; i < numCaptures; i++)
         {
             headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
             headboxes[i].seurat_output_name_ = "capture_" + (i + 1);
             headboxes[i].seurat_output_folder_ = output_folder_;
             headboxes[i].asset_path_ = automator.asset_path_;
-            headboxes[i].ImportSeurat();
+            EditorUtility.SetDirty(headboxes[i]);
         }
+        Debug.Log("Copying assets to project folder...");
+        for (int i = 0; i < numCaptures; i++)
+        {
+            headboxes[i].CopyFiles();
+        }
+        Debug.Log("Beginning import...");
+        AssetDatabase.Refresh();
+        for (int i = 0; i < numCaptures; i++)
+        {
+            headboxes[i].CorrectTextureSettings();
+        }
+        Debug.Log("Fetch imported assets...");
+        for (int i = 0; i < numCaptures; i++)
+        {
+            headboxes[i].FetchAssets();
+            automator.cur_meshes_[i] = headboxes[i].current_obj_;
+            automator.cur_tex_[i] = headboxes[i].current_tex_;
+            EditorUtility.SetDirty(headboxes[i]);
+        }
+        EditorUtility.SetDirty(automator);
+        
+    }
+
+    private void BuildScene()
+    {
+        SeuratAutomator automator = (SeuratAutomator)target;
+        int numCaptures = automator.transform.childCount;
+
+        CaptureHeadbox[] headboxes = new CaptureHeadbox[numCaptures];
+        for (int i = 0; i < numCaptures; i++)
+        {
+            headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
+            automator.OverrideSceneBuilder(headboxes[i]);
+            EditorUtility.SetDirty(headboxes[i]);
+        }
+
+        automator.BuildScene();
+
     }
 
     public void StopSeurat()

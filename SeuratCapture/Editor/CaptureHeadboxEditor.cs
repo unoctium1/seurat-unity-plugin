@@ -28,6 +28,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Threading;
 using Debug = UnityEngine.Debug;
+using System;
 
 // Reflects status updates back to CaptureWindow, and allows CaptureWindow to
 // notify capture/baking tasks to cancel.
@@ -216,28 +217,38 @@ class CaptureWindow : EditorWindow
 // Implements the Capture Headbox component Editor panel.
 [CustomEditor(typeof(CaptureHeadbox))]
 public class CaptureHeadboxEditor : Editor {
-  public static readonly string kSeuratCaptureDir = "SeuratCapture";
+	public static readonly string kSeuratCaptureDir = "SeuratCapture";
 
-  SerializedProperty output_folder_;
+	SerializedProperty output_folder_;
 	SerializedProperty seurat_output_folder_;
 	SerializedProperty output_name_;
 	SerializedProperty run_exec_;
-  SerializedProperty size_;
-  SerializedProperty samples_;
-  SerializedProperty center_resolution_;
-  SerializedProperty resolution_;
-  SerializedProperty dynamic_range_;
-  SerializedProperty last_output_dir_;
+	SerializedProperty size_;
+	SerializedProperty samples_;
+	SerializedProperty center_resolution_;
+	SerializedProperty resolution_;
+	SerializedProperty dynamic_range_;
+	SerializedProperty last_output_dir_;
 	SerializedProperty options_;
 	SerializedProperty use_cache_;
 	SerializedProperty cache_folder_;
 	SerializedProperty asset_path_;
+	SerializedProperty obj_;
+	SerializedProperty tex_;
+	SerializedProperty headbox_prefab_;
+	SerializedProperty seurat_shader_;
+	SerializedProperty prefab_path_;
 
 	EditorBakeStatus capture_status_;
-  CaptureWindow bake_progress_window_;
-  CaptureBuilder capture_builder_;
+	CaptureWindow bake_progress_window_;
+	CaptureBuilder capture_builder_;
 	SeuratPipelineRunner pipeline_runner_;
 	PipelineStatus status_interface_;
+
+	bool draw_capture_;
+	bool draw_pipeline_;
+	bool draw_import_;
+	bool draw_scenebuilder_;
 
 	private bool IsSeuratRunning
 	{
@@ -250,48 +261,85 @@ public class CaptureHeadboxEditor : Editor {
 		}
 	}
 
-  void OnEnable() {
-	output_folder_ = serializedObject.FindProperty("output_folder_");
-	run_exec_ = serializedObject.FindProperty("seurat_exec_");
+	void OnEnable() {
+		output_folder_ = serializedObject.FindProperty("output_folder_");
+		run_exec_ = serializedObject.FindProperty("seurat_exec_");
 		seurat_output_folder_ = serializedObject.FindProperty("seurat_output_folder_");
 		output_name_ = serializedObject.FindProperty("seurat_output_name_");
 		size_ = serializedObject.FindProperty("size_");
-	samples_ = serializedObject.FindProperty("samples_per_face_");
-	center_resolution_ = serializedObject.FindProperty("center_resolution_");
-	resolution_ = serializedObject.FindProperty("resolution_");
-	dynamic_range_ = serializedObject.FindProperty("dynamic_range_");
-	last_output_dir_ = serializedObject.FindProperty("last_output_dir_");
+		samples_ = serializedObject.FindProperty("samples_per_face_");
+		center_resolution_ = serializedObject.FindProperty("center_resolution_");
+		resolution_ = serializedObject.FindProperty("resolution_");
+		dynamic_range_ = serializedObject.FindProperty("dynamic_range_");
+		last_output_dir_ = serializedObject.FindProperty("last_output_dir_");
 		options_ = serializedObject.FindProperty("options");
 		use_cache_ = serializedObject.FindProperty("use_cache_");
 		cache_folder_ = serializedObject.FindProperty("cache_folder_");
 		asset_path_ = serializedObject.FindProperty("asset_path_");
-  }
-
-  public override void OnInspectorGUI() {
-	serializedObject.Update();
-
-	EditorGUILayout.PropertyField(output_folder_, new GUIContent(
-	  "Output Folder"));
-	if (GUILayout.Button("Choose Output Folder")) {
-	  string path = EditorUtility.SaveFolderPanel(
-		"Choose Capture Output Folder", output_folder_.stringValue, "");
-	  if (path.Length != 0) {
-		output_folder_.stringValue = path;
-	  }
+		obj_ = serializedObject.FindProperty("current_obj_");
+		tex_ = serializedObject.FindProperty("current_tex_");
+		headbox_prefab_ = serializedObject.FindProperty("headbox_prefab_");
+		seurat_shader_ = serializedObject.FindProperty("seurat_shader_");
+		prefab_path_ = serializedObject.FindProperty("prefab_path_");
 	}
-	  
-	EditorGUILayout.PropertyField(size_, new GUIContent("Headbox Size"));
-	EditorGUILayout.PropertyField(samples_, new GUIContent("Sample Count"));
-	EditorGUILayout.PropertyField(center_resolution_, new GUIContent(
-	  "Center Capture Resolution"));
-	EditorGUILayout.PropertyField(resolution_, new GUIContent(
-	  "Default Resolution"));
-	EditorGUILayout.PropertyField(dynamic_range_, new GUIContent(
-	  "Dynamic Range"));
 
-	EditorGUILayout.PropertyField(last_output_dir_, new GUIContent(
-	  "Last Output Folder"));
+	public override void OnInspectorGUI() {
+		serializedObject.Update();
 
+		draw_capture_ = Utility.DrawMethodGroup(draw_capture_, "Capture Settings", DrawCaptureSettings);
+		draw_pipeline_ = Utility.DrawMethodGroup(draw_pipeline_, "Pipeline Settings", DrawPipelineSettings);
+		draw_import_ = Utility.DrawMethodGroup(draw_import_, "Import Settings", DrawImportSettings);
+		draw_scenebuilder_ = Utility.DrawMethodGroup(draw_scenebuilder_, "Scene Builder Settings", DrawSceneBuilderSettings);
+
+		DrawButtons();
+
+		serializedObject.ApplyModifiedProperties();
+
+		// Poll the bake status.
+		if (bake_progress_window_ != null && bake_progress_window_.IsComplete()) {
+			bake_progress_window_.Close();
+			bake_progress_window_ = null;
+			capture_builder_ = null;
+			capture_status_ = null;
+		}
+		if (!IsSeuratRunning && pipeline_runner_!= null)
+		{
+			pipeline_runner_.InterruptProcess();
+			pipeline_runner_ = null;
+			status_interface_ = null;
+		}
+
+	}
+
+	private void DrawCaptureSettings()
+	{	
+		EditorGUILayout.PropertyField(output_folder_, new GUIContent(
+	  "Output Folder"));
+		if (GUILayout.Button("Choose Output Folder"))
+		{
+			string path = EditorUtility.SaveFolderPanel(
+			  "Choose Capture Output Folder", output_folder_.stringValue, "");
+			if (path.Length != 0)
+			{
+				output_folder_.stringValue = path;
+			}
+		}
+
+		EditorGUILayout.PropertyField(size_, new GUIContent("Headbox Size"));
+		EditorGUILayout.PropertyField(samples_, new GUIContent("Sample Count"));
+		EditorGUILayout.PropertyField(center_resolution_, new GUIContent(
+		  "Center Capture Resolution"));
+		EditorGUILayout.PropertyField(resolution_, new GUIContent(
+		  "Default Resolution"));
+		EditorGUILayout.PropertyField(dynamic_range_, new GUIContent(
+		  "Dynamic Range"));
+
+		EditorGUILayout.PropertyField(last_output_dir_, new GUIContent(
+		  "Last Output Folder"));
+	}
+
+	private void DrawPipelineSettings()
+	{
 		EditorGUILayout.PropertyField(run_exec_, new GUIContent(
 		  "Seurat Executable"));
 		if (GUILayout.Button("Choose Excutable Location"))
@@ -336,7 +384,10 @@ public class CaptureHeadboxEditor : Editor {
 
 		EditorGUILayout.PropertyField(options_, new GUIContent(
 	  "Commandline Options"), true);
+	}
 
+	private void DrawImportSettings()
+	{
 		EditorGUILayout.PropertyField(asset_path_, new GUIContent(
 		  "Folder for Import"));
 		if (GUILayout.Button("Choose Folder to Import Model & Tex to"))
@@ -355,24 +406,42 @@ public class CaptureHeadboxEditor : Editor {
 				}
 			}
 		}
-		
+		EditorGUILayout.PropertyField(obj_, new GUIContent(
+			"Imported Model"));
+		EditorGUILayout.PropertyField(tex_, new GUIContent(
+			"Imported Texture"));
+	}
+
+	private void DrawSceneBuilderSettings()
+	{
+		EditorGUILayout.PropertyField(headbox_prefab_, new GUIContent(
+			"Headbox Prefab"));
+		EditorGUILayout.PropertyField(seurat_shader_, new GUIContent(
+			"Material Shader"));
+		EditorGUILayout.PropertyField(prefab_path_, new GUIContent(
+			"Relative Path"));
+	}
+
+	private void DrawButtons()
+	{
 		if (capture_status_ != null)
-	{
-	  GUI.enabled = false;
-	}
-	if (GUILayout.Button("Capture")) {
-	  Capture();
-	}
-	GUI.enabled = true;
-	if (IsSeuratRunning || string.IsNullOrEmpty(run_exec_.stringValue))
-	{
-	  GUI.enabled = false;
-	}
-	if (GUILayout.Button("Run Seurat"))
-	{
+		{
+			GUI.enabled = false;
+		}
+		if (GUILayout.Button("Capture"))
+		{
+			Capture();
+		}
+		GUI.enabled = true;
+		if (IsSeuratRunning || string.IsNullOrEmpty(run_exec_.stringValue))
+		{
+			GUI.enabled = false;
+		}
+		if (GUILayout.Button("Run Seurat"))
+		{
 			RunSeurat();
-	}
-	GUI.enabled = true;
+		}
+		GUI.enabled = true;
 		if (!IsSeuratRunning)
 		{
 			GUI.enabled = false;
@@ -382,32 +451,17 @@ public class CaptureHeadboxEditor : Editor {
 			StopSeurat();
 		}
 		GUI.enabled = true;
-		if(GUILayout.Button("Import seurat outputs"))
+		if (GUILayout.Button("Import seurat outputs"))
 		{
 			ImportAssets();
 		}
-
-
-		serializedObject.ApplyModifiedProperties();
-
-	// Poll the bake status.
-	if (bake_progress_window_ != null && bake_progress_window_.IsComplete()) {
-	  bake_progress_window_.Close();
-	  bake_progress_window_ = null;
-	  capture_builder_ = null;
-	  capture_status_ = null;
-	}
-		if (!IsSeuratRunning && pipeline_runner_!= null)
+		if(GUILayout.Button("Build Seurat Capture in Scene"))
 		{
-			pipeline_runner_.InterruptProcess();
-			pipeline_runner_ = null;
-			status_interface_ = null;
+			BuildScene();
 		}
+	}
 
-
-  }
-
-  public void Capture() {
+	public void Capture() {
 	CaptureHeadbox headbox = (CaptureHeadbox)target;
 
 	string capture_output_folder = headbox.output_folder_;
@@ -471,8 +525,16 @@ public class CaptureHeadboxEditor : Editor {
 	public void ImportAssets()
 	{
 		CaptureHeadbox headbox = (CaptureHeadbox)target;
-
+		headbox.CopyFiles();
 		headbox.ImportSeurat();
+		headbox.FetchAssets();
+		EditorUtility.SetDirty(headbox);
+	}
+
+	public void BuildScene()
+	{
+		CaptureHeadbox headbox = (CaptureHeadbox)target;
+		headbox.BuildCapture();
 	}
   
 }

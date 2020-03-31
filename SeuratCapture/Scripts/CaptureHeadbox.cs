@@ -58,8 +58,8 @@ kHDR = 2,
 [ExecuteInEditMode]
 [RequireComponent(typeof(Camera))]
 public class CaptureHeadbox : MonoBehaviour {
-    // -- Capture Settings --
-
+    
+    // Capture Settings --
     [Tooltip("The dimensions of the headbox.")]
     public Vector3 size_ = Vector3.one;
     [Tooltip("The number of samples per face of the headbox.")]
@@ -68,16 +68,14 @@ public class CaptureHeadbox : MonoBehaviour {
     public CubeFaceResolution center_resolution_ = CubeFaceResolution.k4096;
     [Tooltip("The resolution of all samples other than the center.")]
     public CubeFaceResolution resolution_ = CubeFaceResolution.k1024;
-
     [Tooltip("Capture in standard (SDR) or high dynamic range (HDR). HDR requires floating-point render targets, the Camera Component have allow HDR enabled, and enables EXR output.")]
     public CaptureDynamicRange dynamic_range_ = CaptureDynamicRange.kSDR;
-
-    // -- Processing Settings --
-
     [Tooltip("Root destination folder for capture data; empty instructs the capture to use an automatically-generated, unique folder in the project temp folder.")]
     public string output_folder_ = "";
+    // Indicates location of most-recent capture artifacts.
+    public string last_output_dir_;
 
-    [Header("Seurat Pipeline Settings")]
+    // Pipeline Settings
     [Tooltip("Executable for the Seurat pipeline executable")]
     public string seurat_exec_ = "";
     [Tooltip("Destination folder for Seurat output mesh")]
@@ -99,12 +97,21 @@ public class CaptureHeadbox : MonoBehaviour {
         fast_preview = false
     };
 
-    [Header("Import Settings")]
+    // Import Settings
     [Tooltip("Indicates where to copy seurat mesh & texture to")]
     public string asset_path_;
+    [Tooltip("Indicates currently imported object")]
+    public GameObject current_obj_;
+    [Tooltip("Indicates currently imported texture")]
+    public Texture2D current_tex_;
 
-    // Indicates location of most-recent capture artifacts.
-    public string last_output_dir_;
+    // Scene Builder Settings
+    [Tooltip("Prefab to be resized for the headbox")]
+    public GameObject headbox_prefab_;
+    [Tooltip("Shader to use for each seurat material")]
+    public Shader seurat_shader_;
+    [Tooltip("Relative path to place each seurat mesh in, relative to the headbox prefab. Leave blank to spawn at root")]
+    public string prefab_path_;
 
     private Camera color_camera_;
     private CaptureBuilder capture_;
@@ -126,21 +133,48 @@ public class CaptureHeadbox : MonoBehaviour {
         return "-input_path=" + input + " -output_path=" + (use_cache_ ? output + " -cache_path=" + cache_folder_ + options.GetArgs() : options.GetArgs());
     }
 
-    public void ImportSeurat()
+    public void CopyFiles()
     {
         string model_name = seurat_output_name_ + ".obj";
         string tex_name = seurat_output_name_ + ".png";
         string model_path = Path.Combine(seurat_output_folder_, model_name);
         string png_path = Path.Combine(seurat_output_folder_, tex_name);
-        string target_model_path = Path.Combine(asset_path_,model_name);
+        string target_model_path = Path.Combine(asset_path_, model_name);
         string target_texture_path = Path.Combine(asset_path_, tex_name);
-        
-        FileUtil.CopyFileOrDirectory(model_path, Application.dataPath + target_model_path);
-        FileUtil.CopyFileOrDirectory(png_path, Application.dataPath + target_texture_path);
 
-        AssetDatabase.ImportAsset("Assets" + target_model_path);
-        AssetDatabase.ImportAsset("Assets" + target_texture_path);
+        FileUtil.ReplaceFile(model_path, Application.dataPath + target_model_path);
+        FileUtil.ReplaceFile(png_path, Application.dataPath + target_texture_path);
+    }
+
+    public void ImportSeurat()
+    { 
+        string target_model_path = Path.Combine(asset_path_, seurat_output_name_ + ".obj");
+        string target_texture_path = Path.Combine(asset_path_, seurat_output_name_ + ".png");
         
+        AssetDatabase.ImportAsset("Assets" + target_texture_path);
+        AssetDatabase.ImportAsset("Assets" + target_model_path);
+        CorrectTextureSettings();
+
+    }
+
+    public void FetchAssets()
+    {
+        string target_model_path = Path.Combine(asset_path_, seurat_output_name_ + ".obj");
+        string target_texture_path = Path.Combine(asset_path_, seurat_output_name_ + ".png");
+        current_tex_ = (Texture2D)AssetDatabase.LoadAssetAtPath("Assets" + target_texture_path, typeof(Texture2D));
+        current_obj_ = (GameObject)AssetDatabase.LoadAssetAtPath("Assets" + target_model_path, typeof(GameObject));
+    }
+
+    public void CorrectTextureSettings()
+    {
+        string target_texture_path = Path.Combine(asset_path_, seurat_output_name_ + ".png");
+        TextureImporter textureImporter = AssetImporter.GetAtPath("Assets" + target_texture_path) as TextureImporter;
+        textureImporter.mipmapEnabled = false;
+        textureImporter.wrapMode = TextureWrapMode.Clamp;
+        textureImporter.filterMode = FilterMode.Bilinear;
+        textureImporter.maxTextureSize = 4096;
+        EditorUtility.SetDirty(textureImporter);
+        textureImporter.SaveAndReimport();
     }
 
     void Update() {
@@ -173,8 +207,6 @@ public class CaptureHeadbox : MonoBehaviour {
         }
     }
 
-
-
     void StartCapture() {
         Debug.Log("Capture start - temporarily setting fixed framerate.", this);
         capture_ = new CaptureBuilder();
@@ -201,6 +233,61 @@ public class CaptureHeadbox : MonoBehaviour {
     }
 
 #endif
+
+    public void BuildCapture(bool removeCaptureAfter = false, bool setActiveAfter = true)
+    {
+        if (current_obj_ == null || current_tex_ == null || seurat_shader_ == null)
+            return;
+
+        // Setup material
+        Material newMat = new Material(seurat_shader_);
+        newMat.SetTexture("_MainTex", current_tex_);
+
+        GameObject originalParent;
+        GameObject parent;
+        GameObject seuratMesh;
+        if(headbox_prefab_ != null)
+        {
+            parent = Instantiate(headbox_prefab_, this.transform);
+            originalParent = parent;
+            parent.transform.localScale = this.size_;
+
+            if (!string.IsNullOrEmpty(prefab_path_))
+            {
+
+                GameObject newParent = parent.transform.Find(prefab_path_).gameObject;
+                if(newParent == null)
+                {
+                    Debug.Log("Path was invalid!");
+                }
+                else
+                {
+                    parent = newParent;
+                }
+            }
+            seuratMesh = Instantiate(current_obj_);
+        }
+        else
+        {
+            parent = gameObject;
+            seuratMesh = Instantiate(current_obj_);
+            originalParent = seuratMesh;
+        }
+        seuratMesh.GetComponentInChildren<Renderer>().material = newMat;
+        // Ensure seurat mesh is not scaled
+        seuratMesh.transform.parent = parent.transform;
+        seuratMesh.transform.localPosition = Vector3.zero;
+        seuratMesh.transform.localRotation = Quaternion.AngleAxis(180, Vector3.up);
+        seuratMesh.SetActive(setActiveAfter);
+
+        if (removeCaptureAfter)
+        {
+            originalParent.name = this.name;
+            originalParent.transform.parent = this.transform.parent;
+            DestroyImmediate(this.gameObject);
+        }
+
+    }
 
     void OnDrawGizmos()
     {
