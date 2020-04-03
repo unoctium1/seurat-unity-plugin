@@ -1,3 +1,55 @@
+# Unity Seurat Plugin
+
+### Note: This is a fork of a deprecated Google project. The original readme continues from the section 'Importing Seurat Meshes Into Unity'
+The original readme goes over the manual import process, as well as how to diagnose issues with the resulting mesh
+
+Seurat is a scene simplification technology designed to process very complex 3D scenes into a representation that renders efficiently on mobile 6DoF VR systems. This plugin aims to expedite the Seurat creation process.
+
+The process consists of 4 stages: 
+- Capturing images to generate seurat meshes
+- Running the seurat pipeline to generate the meshes
+- Importing the meshes into Unity
+- Setting up a scene with imported meshes
+
+This plugin allows the user to perform all of these from within Unity. In addition, for large or nonconvex spaces, multiple captures can be done at once. 
+
+The plugin consists of two monobehaviour scripts for use, [SeuratAutomator.cs](/SeuratCapture/Scripts/SeuratAutomator.cs) and [CaptureHeadbox.cs](/SeuratCapture/Scripts/CaptureHeadbox.cs). CaptureHeadbox allows capturing and building a single mesh, while SeuratAutomator will automate the process for all children with a CaptureHeadbox component. 
+
+## Requirements
+- Unity - Tested against Unity 2018.4
+- Seurat Pipeline Executable - See [Seurat repo](https://github.com/googlevr/seurat) or download precompiled binary [here](https://github.com/ddiakopoulos/seurat/releases)
+
+## Usage
+1. In Unity, setup scene to capture. All elements of the scene should be set up (lighting, skybox, etc).
+
+2. Depending on how large the walkable area in the scene is, and whether it is convex or not, use either a single CaptureHeadbox or a collection of Headboxes and a SeuratAutomator. 
+
+### Capturing Images
+3. For each headbox in the scene, set the size of the headbox. Size should specify some convex walkable area within the scene. Height of the headbox will usually be 3.
+4. Set capture settings in the inspector. Capture settings control how many images should be captures, as well as their resolution and quality. If you are using multiple headboxes, and all headboxes have the same settings, check the 'Override All' box in the Automator inspector, and set settings there. Otherwise, set settings in the Headbox inspector.
+5. Choose an output folder. For an individual headbox, captures will be created in the folder. For an automator rig, folders will be created for each headbox.
+6. Click the capture button to capture all headboxes.
+
+### Running the Pipeline
+7. In the inspector, set the path to the downloaded or build seurat executable
+8. If you're using a single headbox, select both the output folder and put in an output name. If using the automator, these will be generated. 
+9. Select the 'use cache' option and choose a cache path if you intend to iterate upon textures. This stores geometry in a cache and drastically speeds up repeated iterations. 
+10. If you wish to override or choose any custom commandline parameters, specify them. Descriptions of parameters can be found [here](https://github.com/googlevr/seurat#command-line-parameters). Of particular note is the 'fast preview' option, which speeds up performance at the cost of quality - useful for previewing headboxes. 
+11. Click the Run Seurat button to run the seurat tool. Note that it takes a while to run - if for some reason it must be stopped partway through, hit the 'stop seurat' button.
+
+### Importing Meshes
+12. Select a path in the assets folder to import the mesh and texture too. 
+13. Hit 'Import Seurat.' Note that this process also takes a while, and is thread blocking - Unity WILL freeze until its finished.
+  - After importing, you can check the process was completed successfully if the object and texture fields are not null. 
+  - Alternatively, if these steps aren't working, follow the below steps to manually import, and then drag in the imported assets
+
+### Building the Seurat Mesh in the Scene
+14. Select the Seurat shader to use - this should be either GoogleVR/AlphaBlended or GoogleVR/AlphaTested
+15. Select the headbox prefab. This will be some object that the mesh will be childed to, that will be resized to match the size specified in step 3. 
+16. Input the relative path where the mesh should be spawned. For example, if the headbox prefab is "obj1" and it has a child "obj2", which has a nested child "obj3" where the mesh should be spawned, input "obj2/obj3". Leave blank to spawn at the headbox prefab. 
+ - The "SampleFramework" folder contains sample prefabs and scripts for headbox behavior. 
+17. Click build scene. If using the CaptureHeadbox, the mesh will be built as a child of the headbox. If using the automator, a copy of the automator will be made with all meshes as children of it. 
+
 # Importing Seurat Meshes Into Unity
 
 Seurat is a scene simplification technology designed to process very complex 3D scenes into a representation that renders efficiently on mobile 6DoF VR systems.
