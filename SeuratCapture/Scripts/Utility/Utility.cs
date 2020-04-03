@@ -3,19 +3,22 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-public static class Utility
+namespace Seurat
 {
-    public delegate void DrawFoldoutSection();
-
-	public static bool DrawMethodGroup(bool foldout, string label, DrawFoldoutSection method)
+	public static class Utility
 	{
-		bool draw = EditorGUILayout.Foldout(foldout, label);
-		if (draw)
+		public delegate void DrawFoldoutSection();
+
+		public static bool DrawMethodGroup(bool foldout, string label, DrawFoldoutSection method)
 		{
-			EditorGUI.indentLevel++;
-			method();
-			EditorGUI.indentLevel--;
+			bool draw = EditorGUILayout.Foldout(foldout, label);
+			if (draw)
+			{
+				EditorGUI.indentLevel++;
+				method();
+				EditorGUI.indentLevel--;
+			}
+			return draw;
 		}
-		return draw;
 	}
 }
