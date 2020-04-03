@@ -20,6 +20,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 using UnityEngine;
+using System.Collections;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -126,6 +127,19 @@ public class CaptureHeadbox : MonoBehaviour {
     }
 
 #if UNITY_EDITOR
+    private string target_model_path;
+    private string target_texture_path;
+
+    public bool FilesExistInProject
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(target_model_path) && string.IsNullOrEmpty(target_texture_path))
+                return false;
+            return File.Exists(Application.dataPath + target_model_path) && File.Exists(Application.dataPath + target_texture_path);
+        }
+    }
+
     public string GetArgString()
     {
         string input = Path.Combine(output_folder_, "manifest.json");
@@ -139,8 +153,8 @@ public class CaptureHeadbox : MonoBehaviour {
         string tex_name = seurat_output_name_ + ".png";
         string model_path = Path.Combine(seurat_output_folder_, model_name);
         string png_path = Path.Combine(seurat_output_folder_, tex_name);
-        string target_model_path = Path.Combine(asset_path_, model_name);
-        string target_texture_path = Path.Combine(asset_path_, tex_name);
+        target_model_path = Path.Combine(asset_path_, model_name);
+        target_texture_path = Path.Combine(asset_path_, tex_name);
 
         FileUtil.ReplaceFile(model_path, Application.dataPath + target_model_path);
         FileUtil.ReplaceFile(png_path, Application.dataPath + target_texture_path);

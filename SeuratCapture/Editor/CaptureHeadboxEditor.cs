@@ -20,15 +20,13 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEditor;
-using UnityEditor.SceneManagement;
-using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using System.Threading;
 using Debug = UnityEngine.Debug;
 using System;
+using System.Collections;
 
 // Reflects status updates back to CaptureWindow, and allows CaptureWindow to
 // notify capture/baking tasks to cancel.
