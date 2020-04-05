@@ -48,7 +48,11 @@ The plugin consists of two monobehaviour scripts for use, [SeuratAutomator.cs](/
 15. Select the headbox prefab. This will be some object that the mesh will be childed to, that will be resized to match the size specified in step 3. 
 16. Input the relative path where the mesh should be spawned. For example, if the headbox prefab is "obj1" and it has a child "obj2", which has a nested child "obj3" where the mesh should be spawned, input "obj2/obj3". Leave blank to spawn at the headbox prefab. 
  - The "SampleFramework" folder contains sample prefabs and scripts for headbox behavior. 
-17. Click build scene. If using the CaptureHeadbox, the mesh will be built as a child of the headbox. If using the automator, a copy of the automator will be made with all meshes as children of it. 
+17. Select the render queue. This should be around 1999, so that other objects render on top of it.
+18. If you wish to create materials, check the "use materials" box. Building a scene will work without this, but temporary materials will not survive common Unity operations like changing the scene or making a prefab out of the finished meshes. 
+  - If using materials, select a folder to put materials in, and then click 'Build Materials'
+  - When finished, there will be a reference to the material/materials in the inspector.
+19. Click build scene. If using the CaptureHeadbox, the mesh will be built as a child of the headbox. If using the automator, a copy of the automator will be made with all meshes as children of it. Building with the automator will remove all headbox and automator components from the finished mesh. Building with CaptureHeadbox will not remove anything.
 
 # Importing Seurat Meshes Into Unity
 
