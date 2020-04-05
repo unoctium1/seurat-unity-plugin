@@ -118,6 +118,14 @@ namespace Seurat
         public Shader seurat_shader_;
         [Tooltip("Relative path to place each seurat mesh in, relative to the headbox prefab. Leave blank to spawn at root")]
         public string prefab_path_;
+        [Tooltip("Target render queue position to set material to. Default is 1999, should be around there in order to interact with other objects in the scene.")]
+        public int render_queue_ = 1999;
+        [Tooltip("Select to save a material, instead of creating a local, scene relative material. Recommended")]
+        public bool use_mat_ = true;
+        [Tooltip("Path to place material in. Must be inside Asset folder.")]
+        public string material_path_;
+        [Tooltip("Currently built material. If use_mat_ is false, this will not be used")]
+        public Material mat_;
 
         private Camera color_camera_;
         private CaptureBuilder capture_;
@@ -195,7 +203,7 @@ namespace Seurat
             textureImporter.wrapMode = TextureWrapMode.Clamp;
             textureImporter.filterMode = FilterMode.Bilinear;
             textureImporter.maxTextureSize = 4096;
-            EditorUtility.SetDirty(textureImporter);
+            UnityEditor.EditorUtility.SetDirty(textureImporter);
             textureImporter.SaveAndReimport();
         }
 
@@ -268,16 +276,23 @@ namespace Seurat
             Time.captureFramerate = 0;
         }
 
+        public Material CreateMaterial()
+        {
+            Material newMat = new Material(seurat_shader_);
+            newMat.SetTexture("_MainTex", current_tex_);
+            newMat.renderQueue = render_queue_;
+            string path = Path.Combine(material_path_, seurat_output_name_ + ".mat");
+            AssetDatabase.CreateAsset(newMat, path);
+            mat_ = AssetDatabase.LoadAssetAtPath(path, typeof(Material)) as Material;
+            return mat_;
+        }
+
 #endif
 
         public void BuildCapture(bool removeCaptureAfter = false, bool setActiveAfter = true)
         {
             if (current_obj_ == null || current_tex_ == null || seurat_shader_ == null)
                 return;
-
-            // Setup material
-            Material newMat = new Material(seurat_shader_);
-            newMat.SetTexture("_MainTex", current_tex_);
 
             GameObject originalParent;
             GameObject parent;
@@ -309,7 +324,21 @@ namespace Seurat
                 seuratMesh = Instantiate(current_obj_);
                 originalParent = seuratMesh;
             }
-            seuratMesh.GetComponentInChildren<Renderer>().material = newMat;
+
+            Material newMat;
+            if (use_mat_)
+            {
+                // Use built material
+                newMat = mat_;
+            }
+            else
+            {
+                // Setup material
+                newMat = new Material(seurat_shader_);
+                newMat.renderQueue = render_queue_;
+                newMat.SetTexture("_MainTex", current_tex_);
+            }
+            seuratMesh.GetComponentInChildren<Renderer>().material = mat_;
             // Ensure seurat mesh is not scaled
             seuratMesh.transform.parent = parent.transform;
             seuratMesh.transform.localPosition = Vector3.zero;

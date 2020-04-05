@@ -181,8 +181,8 @@ namespace Seurat
 				return;
 			}
 
-			// Refresh the Editor GUI to finish the task.
-			EditorUtility.SetDirty(capture_notification_component_);
+            // Refresh the Editor GUI to finish the task.
+            UnityEditor.EditorUtility.SetDirty(capture_notification_component_);
 
 			if (bake_stage_ == BakeStage.kCapture)
 			{
@@ -250,6 +250,10 @@ namespace Seurat
 		SerializedProperty headbox_prefab_;
 		SerializedProperty seurat_shader_;
 		SerializedProperty prefab_path_;
+		SerializedProperty render_queue_;
+		SerializedProperty use_mat_;
+		SerializedProperty material_path_;
+		SerializedProperty mat_;
 
 		EditorBakeStatus capture_status_;
 		CaptureWindow bake_progress_window_;
@@ -294,16 +298,20 @@ namespace Seurat
 			headbox_prefab_ = serializedObject.FindProperty("headbox_prefab_");
 			seurat_shader_ = serializedObject.FindProperty("seurat_shader_");
 			prefab_path_ = serializedObject.FindProperty("prefab_path_");
+			render_queue_ = serializedObject.FindProperty("render_queue_");
+			use_mat_ = serializedObject.FindProperty("use_mat_");
+			material_path_ = serializedObject.FindProperty("material_path_");
+			mat_ = serializedObject.FindProperty("mat_");
 		}
 
 		public override void OnInspectorGUI()
 		{
 			serializedObject.Update();
 
-			draw_capture_ = Utility.DrawMethodGroup(draw_capture_, "Capture Settings", DrawCaptureSettings);
-			draw_pipeline_ = Utility.DrawMethodGroup(draw_pipeline_, "Pipeline Settings", DrawPipelineSettings);
-			draw_import_ = Utility.DrawMethodGroup(draw_import_, "Import Settings", DrawImportSettings);
-			draw_scenebuilder_ = Utility.DrawMethodGroup(draw_scenebuilder_, "Scene Builder Settings", DrawSceneBuilderSettings);
+			draw_capture_ = EditorUtility.DrawMethodGroup(draw_capture_, "Capture Settings", DrawCaptureSettings);
+			draw_pipeline_ = EditorUtility.DrawMethodGroup(draw_pipeline_, "Pipeline Settings", DrawPipelineSettings);
+			draw_import_ = EditorUtility.DrawMethodGroup(draw_import_, "Import Settings", DrawImportSettings);
+			draw_scenebuilder_ = EditorUtility.DrawMethodGroup(draw_scenebuilder_, "Scene Builder Settings", DrawSceneBuilderSettings);
 
 			DrawButtons();
 
@@ -326,13 +334,14 @@ namespace Seurat
 
 		}
 
-		private void DrawCaptureSettings()
+        #region DRAW_GUI_HELPERS
+        private void DrawCaptureSettings()
 		{
 			EditorGUILayout.PropertyField(output_folder_, new GUIContent(
 		  "Output Folder"));
 			if (GUILayout.Button("Choose Output Folder"))
 			{
-				string path = EditorUtility.SaveFolderPanel(
+				string path = UnityEditor.EditorUtility.SaveFolderPanel(
 				  "Choose Capture Output Folder", output_folder_.stringValue, "");
 				if (path.Length != 0)
 				{
@@ -359,7 +368,7 @@ namespace Seurat
 			  "Seurat Executable"));
 			if (GUILayout.Button("Choose Excutable Location"))
 			{
-				string path = EditorUtility.OpenFilePanel(
+				string path = UnityEditor.EditorUtility.OpenFilePanel(
 				  "Choose Seurat Executable Location", Application.dataPath, "exe");
 				if (path.Length != 0)
 				{
@@ -371,7 +380,7 @@ namespace Seurat
 			  "Seurat Output Folder"));
 			if (GUILayout.Button("Choose Output Folder for Seurat Pipeline"))
 			{
-				string path = EditorUtility.SaveFolderPanel(
+				string path = UnityEditor.EditorUtility.SaveFolderPanel(
 				  "Choose Seurat Output Folder", seurat_output_folder_.stringValue, "");
 				if (path.Length != 0)
 				{
@@ -388,7 +397,7 @@ namespace Seurat
 			  "Cache Folder"));
 				if (GUILayout.Button("Choose Folder for Geometry cache"))
 				{
-					string path = EditorUtility.SaveFolderPanel(
+					string path = UnityEditor.EditorUtility.SaveFolderPanel(
 					  "Choose Cache Folder", cache_folder_.stringValue, "");
 					if (path.Length != 0)
 					{
@@ -407,7 +416,7 @@ namespace Seurat
 			  "Folder for Import"));
 			if (GUILayout.Button("Choose Folder to Import Model & Tex to"))
 			{
-				string path = EditorUtility.SaveFolderPanel(
+				string path = UnityEditor.EditorUtility.SaveFolderPanel(
 				  "Choose Import Location", Application.dataPath, "");
 				if (path.Length != 0)
 				{
@@ -435,6 +444,41 @@ namespace Seurat
 				"Material Shader"));
 			EditorGUILayout.PropertyField(prefab_path_, new GUIContent(
 				"Relative Path"));
+
+			EditorGUILayout.PropertyField(render_queue_, new GUIContent(
+				"Render Queue"));
+			EditorGUILayout.PropertyField(use_mat_, new GUIContent(
+				"Save material?"));
+			if (use_mat_.boolValue)
+			{
+				EditorGUILayout.PropertyField(material_path_, new GUIContent(
+			  "Folder for Materials"));
+				if (GUILayout.Button("Choose Folder to Save Material to"))
+				{
+					string path = UnityEditor.EditorUtility.SaveFolderPanel(
+					  "Choose Material Location", Application.dataPath, "");
+					if (path.Length != 0)
+					{
+						if (path.StartsWith(Application.dataPath))
+						{
+							material_path_.stringValue = "Assets" + path.Substring(Application.dataPath.Length);
+						}
+						else
+						{
+							Debug.LogError("Path must be in assets folder");
+						}
+					}
+				}
+
+				if (GUILayout.Button("Set up material"))
+				{
+					BuildMaterial();
+				}
+
+				EditorGUILayout.PropertyField(mat_, new GUIContent(
+					"Current material"));
+			}
+
 		}
 
 		private void DrawButtons()
@@ -476,7 +520,11 @@ namespace Seurat
 			}
 		}
 
-		public void Capture()
+        #endregion //DRAW GUI HELPERS
+
+        #region BUTTON_COMMANDS
+
+        public void Capture()
 		{
 			CaptureHeadbox headbox = (CaptureHeadbox)target;
 
@@ -545,7 +593,13 @@ namespace Seurat
 			headbox.CopyFiles();
 			headbox.ImportSeurat();
 			headbox.FetchAssets();
-			EditorUtility.SetDirty(headbox);
+            UnityEditor.EditorUtility.SetDirty(headbox);
+		}
+
+		public void BuildMaterial()
+		{
+			CaptureHeadbox headbox = (CaptureHeadbox)target;
+			headbox.CreateMaterial();
 		}
 
 		public void BuildScene()
@@ -554,5 +608,7 @@ namespace Seurat
 			headbox.BuildCapture();
 		}
 
-	}
+        #endregion //BUTTON COMMANDS
+
+    }
 }

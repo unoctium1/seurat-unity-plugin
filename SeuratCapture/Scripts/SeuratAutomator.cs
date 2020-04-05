@@ -54,6 +54,14 @@ namespace Seurat
         public Shader seurat_shader_;
         [Tooltip("Relative path to place each seurat mesh in, relative to the headbox prefab. Leave blank to spawn at root")]
         public string prefab_path_;
+        [Tooltip("Target render queue position to set material to. Default is 1999, should be around there in order to interact with other objects in the scene.")]
+        public int render_queue_ = 1999;
+        [Tooltip("Select to save a material, instead of creating a local, scene relative material. Recommended")]
+        public bool use_mat_ = true;
+        [Tooltip("Path to place material in. Must be inside Asset folder.")]
+        public string material_path_;
+        [Tooltip("List of all materials built. If use_mat_ is false, this will not be used")]
+        public Material[] cur_mats_;
 
         public void OverrideHeadbox(CaptureHeadbox head)
         {
@@ -76,6 +84,12 @@ namespace Seurat
             head.prefab_path_ = prefab_path_;
             head.headbox_prefab_ = headbox_prefab_;
             head.seurat_shader_ = seurat_shader_;
+            head.render_queue_ = render_queue_;
+            if (use_mat_)
+            {
+                head.material_path_ = material_path_;
+                head.use_mat_ = use_mat_;
+            }
         }
 
         public void BuildScene()
