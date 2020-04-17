@@ -364,23 +364,23 @@ namespace Seurat
 
         GameObject InstantiatePrefab(GameObject toInstantiate, Transform parent)
         {
-#if UNITY_2018_3_OR_NEWER
+#if UNITY_2018_3_OR_NEWER && UNITY_EDITOR
             //Preserve prefab for nested prefab 
             return PrefabUtility.InstantiatePrefab(toInstantiate, parent) as GameObject;
 #else
             //Don't support nested prefabs
-            return Instantiate.(toInstantiate, parent);
+            return Instantiate(toInstantiate, parent);
 #endif
         }
 
         GameObject InstantiatePrefab(GameObject toInstantiate)
         {
-#if UNITY_2018_3_OR_NEWER
+#if UNITY_2018_3_OR_NEWER && UNITY_EDITOR
             //Preserve prefab for nested prefab 
             return PrefabUtility.InstantiatePrefab(toInstantiate) as GameObject;
 #else
             //Don't support nested prefabs
-            return Instantiate.(toInstantiate);
+            return Instantiate(toInstantiate);
 #endif
         }
     }
