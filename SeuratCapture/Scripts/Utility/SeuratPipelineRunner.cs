@@ -9,6 +9,12 @@ namespace Seurat
 {
     public class PipelineStatus
     {
+        public virtual bool TaskContinuing() { return true; }
+
+        public virtual void SetProgressBar(string message) { }
+
+        public virtual void SetName(string name) { }
+
         public virtual void SendMessage(string message) { }
         public virtual void SendErrorMessage(string message) { }
         public virtual void SendInfoMessage(string message) { }
@@ -120,7 +126,14 @@ namespace Seurat
             // Collect the sort command output.
             if (!string.IsNullOrEmpty(outLine.Data))
             {
-                status.SendMessage(outLine.Data);
+                if (outLine.Data.StartsWith("INFO"))
+                {
+                    status.SendInfoMessage(outLine.Data);
+                }
+                else
+                {
+                    status.SetProgressBar(outLine.Data);
+                }
             }
         }
         private static void ErrorHandler(object sendingProcess,

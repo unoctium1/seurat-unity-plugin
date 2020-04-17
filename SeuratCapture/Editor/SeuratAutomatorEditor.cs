@@ -37,6 +37,57 @@ namespace Seurat
         }
     }
 
+    class SeuratCollectionRunnerStatus : PipelineStatus
+    {
+        SeuratRunnerWindow runner_gui_;
+        bool task_cancelled_ = false;
+        char[] seperators = { '[', ']' };
+        string name;
+
+        public override bool TaskContinuing()
+        {
+            return !task_cancelled_;
+        }
+
+        public override void SetName(string name)
+        {
+            this.name = name;
+        }
+
+        public void CancelTask()
+        {
+            Debug.Log("User canceled seurat processing.");
+            task_cancelled_ = true;
+        }
+
+        public override void SendErrorMessage(string message)
+        {
+            Debug.LogError(name + message);
+        }
+
+        public override void SendMessage(string message)
+        {
+            Debug.Log(name + message);
+        }
+
+        public override void SetProgressBar(string message)
+        {
+            string[] parts = message.Split(seperators, 3);
+            float value = Mathf.Max(parts[1].LastIndexOf('+'),0.0f) / ((float)parts[1].Length);
+            runner_gui_.SetProgressBar(name + parts[0] + parts[2], value);
+        }
+        public override void SendInfoMessage(string message)
+        {
+            runner_gui_.SetProgressBar(name + message, 0.0f);
+            Debug.LogWarning(name + message);
+        }
+
+        public void SetGUI(SeuratRunnerWindow gui)
+        {
+            runner_gui_ = gui;
+        }
+    }
+
     // Provides an interactive modeless GUI during the capture and bake process.
     class AutomateWindow : EditorWindow
     {
@@ -208,6 +259,114 @@ namespace Seurat
         }
     };
 
+    // Provides an interactive modeless GUI to monitor the seurat executable.
+    class SeuratRunnerWindow : EditorWindow
+    {
+        // Defines a state machine flow for the capture and bake process.
+        enum BakeStage
+        {
+            kInitialization,
+            kRunning,
+            // This stage indicates the GUI is waiting for user to dismiss the window
+            // by pressing a "Done" button.
+            kWaitForDoneButton,
+            kComplete,
+        }
+
+        string progress_message_;
+        float progress_complete_;
+        // The headbox component receives notification that capture is complete to
+        // update the Inspector GUI, e.g. unlock the Capture button.
+        SeuratAutomator capture_notification_component_;
+        SeuratPipelineCollectionRunner monitored_runner_;
+        SeuratCollectionRunnerStatus runner_status_;
+
+        BakeStage bake_stage_ = BakeStage.kInitialization;
+
+        public void SetupStatus(SeuratCollectionRunnerStatus runner_status)
+        {
+            runner_status_ = runner_status;
+            runner_status_.SetGUI(this);
+        }
+
+        public void SetupRunnerProcess(SeuratAutomator capture_notification_component,
+          SeuratPipelineCollectionRunner runner)
+        {
+            bake_stage_ = BakeStage.kRunning;
+            capture_notification_component_ = capture_notification_component;
+            monitored_runner_ = runner;
+            monitored_runner_.Run();
+        }
+
+        public void SetProgressBar(string message, float fraction_complete)
+        {
+            progress_message_ = message;
+            progress_complete_ = fraction_complete;
+        }
+
+        public void OnGUI()
+        {
+            // Reserve layout space for the progress bar, equal to the space for a
+            // textfield:
+            Rect progress_rect = GUILayoutUtility.GetRect(18, 18, "TextField");
+            EditorGUI.ProgressBar(progress_rect, progress_complete_, progress_message_);
+            EditorGUILayout.Space();
+
+            if (bake_stage_ != BakeStage.kWaitForDoneButton)
+            {
+                if (GUILayout.Button("Cancel"))
+                {
+                    if (runner_status_ != null)
+                    {
+                        runner_status_.CancelTask();
+                    }
+                }
+            }
+
+            if (bake_stage_ == BakeStage.kWaitForDoneButton)
+            {
+                if (GUILayout.Button("Done"))
+                {
+                    bake_stage_ = BakeStage.kComplete;
+                }
+            }
+        }
+
+        public void Update()
+        {
+
+            // Refresh the Editor GUI to finish the task.
+            UnityEditor.EditorUtility.SetDirty(capture_notification_component_);
+
+            if (bake_stage_ == BakeStage.kRunning)
+            {
+
+                if (!monitored_runner_.IsProcessRunning() && runner_status_.TaskContinuing())
+                {
+                    bake_stage_ = BakeStage.kWaitForDoneButton;
+                }
+
+
+                if (runner_status_ != null && !runner_status_.TaskContinuing())
+                {
+                    bake_stage_ = BakeStage.kComplete;
+                    if (monitored_runner_ != null)
+                    {
+                        monitored_runner_.InterruptProcess();
+                        monitored_runner_ = null;
+                    }
+                }
+            }
+
+            // Repaint with updated progress the GUI on each wall-clock time tick.
+            Repaint();
+        }
+
+        public bool IsComplete()
+        {
+            return bake_stage_ == BakeStage.kComplete;
+        }
+    };
 
     // Implements the Capture Headbox component Editor panel.
     [CustomEditor(typeof(SeuratAutomator))]
@@ -239,23 +398,13 @@ namespace Seurat
         AutomateWindow bake_progress_window_;
         CaptureBuilder[] capture_builder_;
         SeuratPipelineCollectionRunner collection_runner_;
-        SeuratRunnerStatus runner_status_;
+        SeuratCollectionRunnerStatus runner_status_;
+        SeuratRunnerWindow runner_window_;
 
         bool draw_capture_;
         bool draw_pipeline_;
         bool draw_import_;
         bool draw_scenebuilder_;
-
-        private bool IsSeuratRunning
-        {
-            get
-            {
-                if (collection_runner_ == null)
-                    return false;
-                else
-                    return collection_runner_.IsProcessRunning();
-            }
-        }
 
         void OnEnable()
         {
@@ -300,9 +449,10 @@ namespace Seurat
                 capture_builder_ = null;
                 capture_status_ = null;
             }
-            if (!IsSeuratRunning && collection_runner_ != null)
+            if (runner_window_ != null && runner_window_.IsComplete())
             {
-                collection_runner_.InterruptProcess();
+                runner_window_.Close();
+                runner_window_ = null;
                 collection_runner_ = null;
                 runner_status_ = null;
             }
@@ -439,22 +589,13 @@ namespace Seurat
                 Capture();
             }
             GUI.enabled = true;
-            if (IsSeuratRunning || exec_path_.stringValue.Length == 0)
+            if (runner_status_ != null || exec_path_.stringValue.Length == 0)
             {
                 GUI.enabled = false;
             }
             if (GUILayout.Button("Run Seurat"))
             {
                 RunSeurat();
-            }
-            GUI.enabled = true;
-            if (!IsSeuratRunning)
-            {
-                GUI.enabled = false;
-            }
-            if (GUILayout.Button("Stop Seurat"))
-            {
-                StopSeurat();
             }
             GUI.enabled = true;
             if (GUILayout.Button("Import All"))
@@ -489,20 +630,37 @@ namespace Seurat
             CaptureHeadbox[] headboxes = new CaptureHeadbox[numCaptures];
             bake_progress_window_ = (AutomateWindow)EditorWindow.GetWindow(typeof(AutomateWindow));
             bake_progress_window_.SetupStatus(capture_status_);
+            int num_not_null = 0;
 
             for (int i = 0; i < numCaptures; i++)
             {
-                capture_builder_[i] = new CaptureBuilder();
                 headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
-                automator.OverrideHeadbox(headboxes[i]);
-                string output = capture_output_folder + "\\" + (i + 1);
-                headboxes[i].output_folder_ = output;
-                UnityEditor.EditorUtility.SetDirty(headboxes[i]);
-                Directory.CreateDirectory(output);
-                capture_builder_[i].BeginCapture(headboxes[i], output, 1, capture_status_, "Capture " + (i + 1) + ": ");
+                if (headboxes[i].isActiveAndEnabled)
+                {
+                    num_not_null++;
+                    capture_builder_[i] = new CaptureBuilder();
+                    automator.OverrideHeadbox(headboxes[i]);
+                    string output = capture_output_folder + "\\" + (i + 1);
+                    headboxes[i].output_folder_ = output;
+                    UnityEditor.EditorUtility.SetDirty(headboxes[i]);
+                    Directory.CreateDirectory(output);
+                    capture_builder_[i].BeginCapture(headboxes[i], output, 1, capture_status_, "Capture " + (i + 1) + ": ");
+                }
+            }
+            CaptureHeadbox[] total_headboxes = new CaptureHeadbox[num_not_null];
+            CaptureBuilder[] total_capture_builders = new CaptureBuilder[num_not_null];
+            int j = 0;
+            for (int i = 0; i < numCaptures; i++)
+            {
+                if(capture_builder_[i] != null)
+                {
+                    total_headboxes[j] = headboxes[i];
+                    total_capture_builders[j] = capture_builder_[i];
+                    j++;
+                }
             }
 
-            bake_progress_window_.SetupCaptureProcess(headboxes, capture_builder_);
+            bake_progress_window_.SetupCaptureProcess(total_headboxes, total_capture_builders);
 
         }
 
@@ -512,7 +670,7 @@ namespace Seurat
             string capture_output_folder = automator.output_folder_;
             string exec_path = automator.seurat_executable_path_;
             int numCaptures = automator.transform.childCount;
-            runner_status_ = new SeuratRunnerStatus();
+            runner_status_ = new SeuratCollectionRunnerStatus();
 
             CaptureHeadbox[] headboxes = new CaptureHeadbox[numCaptures];
             SeuratPipelineRunner[] runners = new SeuratPipelineRunner[numCaptures];
@@ -520,27 +678,33 @@ namespace Seurat
             for (int i = 0; i < numCaptures; i++)
             {
                 headboxes[i] = automator.transform.GetChild(i).GetComponent<CaptureHeadbox>();
-                headboxes[i].output_folder_ = Path.Combine(capture_output_folder, (i + 1).ToString());
-                headboxes[i].seurat_output_folder_ = capture_output_folder;
-                Directory.CreateDirectory(capture_output_folder);
-                headboxes[i].seurat_output_name_ = "capture_" + (i + 1);
-                if (automator.use_cache_)
+                if (headboxes[i].isActiveAndEnabled)
                 {
-                    headboxes[i].use_cache_ = true;
-                    string cache_path = Path.Combine(capture_output_folder, "capture_" + (i + 1) + "_cache");
-                    headboxes[i].cache_folder_ = cache_path;
-                    Directory.CreateDirectory(cache_path);
+                    headboxes[i].output_folder_ = Path.Combine(capture_output_folder, (i + 1).ToString());
+                    headboxes[i].seurat_output_folder_ = capture_output_folder;
+                    Directory.CreateDirectory(capture_output_folder);
+                    headboxes[i].seurat_output_name_ = "capture_" + (i + 1);
+                    if (automator.use_cache_)
+                    {
+                        headboxes[i].use_cache_ = true;
+                        string cache_path = Path.Combine(capture_output_folder, "capture_" + (i + 1) + "_cache");
+                        headboxes[i].cache_folder_ = cache_path;
+                        Directory.CreateDirectory(cache_path);
+                    }
+                    automator.OverrideParams(headboxes[i]);
+                    string arg = headboxes[i].GetArgString();
+                    UnityEditor.EditorUtility.SetDirty(headboxes[i]);
+                    runners[i] = new SeuratPipelineRunner(arg, exec_path, runner_status_);
                 }
-                automator.OverrideParams(headboxes[i]);
-                string arg = headboxes[i].GetArgString();
-                UnityEditor.EditorUtility.SetDirty(headboxes[i]);
-                runners[i] = new SeuratPipelineRunner(arg, exec_path, runner_status_);
             }
             Debug.Log("All processes set up");
             Debug.Log("Beginning seurat captures...");
             collection_runner_ = new SeuratPipelineCollectionRunner(runners, runner_status_);
 
-            collection_runner_.Run();
+            runner_window_ = (SeuratRunnerWindow)EditorWindow.GetWindow(typeof(SeuratRunnerWindow));
+            runner_window_.SetupStatus(runner_status_);
+
+            runner_window_.SetupRunnerProcess(automator, collection_runner_);
         }
 
         public void ImportAll()
@@ -618,16 +782,6 @@ namespace Seurat
 
             automator.BuildScene();
 
-        }
-
-        public void StopSeurat()
-        {
-            if (IsSeuratRunning)
-            {
-                collection_runner_.InterruptProcess();
-                collection_runner_ = null;
-                runner_status_ = null;
-            }
         }
 
         #endregion //BUTTON COMMANDS

@@ -299,7 +299,7 @@ namespace Seurat
             GameObject seuratMesh;
             if (headbox_prefab_ != null)
             {
-                parent = Instantiate(headbox_prefab_, this.transform);
+                parent = InstantiatePrefab(headbox_prefab_, this.transform);
                 originalParent = parent;
                 parent.transform.localScale = this.size_;
 
@@ -316,12 +316,12 @@ namespace Seurat
                         parent = newParent;
                     }
                 }
-                seuratMesh = Instantiate(current_obj_);
+                seuratMesh = InstantiatePrefab(current_obj_);
             }
             else
             {
                 parent = gameObject;
-                seuratMesh = Instantiate(current_obj_);
+                seuratMesh = InstantiatePrefab(current_obj_);
                 originalParent = seuratMesh;
             }
 
@@ -360,6 +360,28 @@ namespace Seurat
             Gizmos.matrix = transform.localToWorldMatrix;
             Gizmos.color = Color.blue;
             Gizmos.DrawWireCube(Vector3.zero, size_);
+        }
+
+        GameObject InstantiatePrefab(GameObject toInstantiate, Transform parent)
+        {
+#if UNITY_2018_3_OR_NEWER
+            //Preserve prefab for nested prefab 
+            return PrefabUtility.InstantiatePrefab(toInstantiate, parent) as GameObject;
+#else
+            //Don't support nested prefabs
+            return Instantiate.(toInstantiate, parent);
+#endif
+        }
+
+        GameObject InstantiatePrefab(GameObject toInstantiate)
+        {
+#if UNITY_2018_3_OR_NEWER
+            //Preserve prefab for nested prefab 
+            return PrefabUtility.InstantiatePrefab(toInstantiate) as GameObject;
+#else
+            //Don't support nested prefabs
+            return Instantiate.(toInstantiate);
+#endif
         }
     }
 }

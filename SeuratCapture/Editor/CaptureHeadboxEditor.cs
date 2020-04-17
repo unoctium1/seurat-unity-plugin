@@ -22,11 +22,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 using UnityEngine;
 using UnityEditor;
 using System.IO;
-using System.Diagnostics;
-using System.Threading;
 using Debug = UnityEngine.Debug;
-using System;
-using System.Collections;
 
 // Reflects status updates back to CaptureWindow, and allows CaptureWindow to
 // notify capture/baking tasks to cancel.
@@ -58,6 +54,21 @@ namespace Seurat
 
 	class SeuratRunnerStatus : PipelineStatus
 	{
+		SeuratWindow runner_gui_;
+		bool task_cancelled_ = false;
+		char[] seperators = { '[', ']' };
+
+		public override bool TaskContinuing()
+		{
+			return !task_cancelled_;
+		}
+
+		public void CancelTask()
+		{
+			Debug.Log("User canceled seurat processing.");
+			task_cancelled_ = true;
+		}
+
 		public override void SendErrorMessage(string message)
 		{
 			Debug.LogError(message);
@@ -67,9 +78,22 @@ namespace Seurat
 		{
 			Debug.Log(message);
 		}
+
+		public override void SetProgressBar(string message)
+		{
+			string[] parts = message.Split(seperators,3);
+			float value = ((float)parts[1].LastIndexOf('+')) / ((float)parts[1].Length);
+			runner_gui_.SetProgressBar(parts[0] + parts[2], value);
+		}
 		public override void SendInfoMessage(string message)
 		{
+			runner_gui_.SetProgressBar(message.Substring(message.IndexOf(':')), 0.0f);
 			Debug.LogWarning(message);
+		}
+
+		public void SetGUI(SeuratWindow gui)
+		{
+			runner_gui_ = gui;
 		}
 	}
 
@@ -224,6 +248,114 @@ namespace Seurat
 		}
 	};
 
+	// Provides an interactive modeless GUI to monitor the seurat executable.
+	class SeuratWindow : EditorWindow
+	{
+		// Defines a state machine flow for the capture and bake process.
+		enum BakeStage
+		{
+			kInitialization,
+			kRunning,
+			// This stage indicates the GUI is waiting for user to dismiss the window
+			// by pressing a "Done" button.
+			kWaitForDoneButton,
+			kComplete,
+		}
+
+		string progress_message_;
+		float progress_complete_;
+		// The headbox component receives notification that capture is complete to
+		// update the Inspector GUI, e.g. unlock the Capture button.
+		CaptureHeadbox capture_notification_component_;
+		SeuratPipelineRunner monitored_runner_;
+		SeuratRunnerStatus runner_status_;
+
+		BakeStage bake_stage_ = BakeStage.kInitialization;
+
+		public void SetupStatus(SeuratRunnerStatus runner_status)
+		{
+			runner_status_ = runner_status;
+			runner_status_.SetGUI(this);
+		}
+
+		public void SetupRunnerProcess(CaptureHeadbox capture_notification_component,
+		  SeuratPipelineRunner runner)
+		{
+			bake_stage_ = BakeStage.kRunning;
+			capture_notification_component_ = capture_notification_component;
+			monitored_runner_ = runner;
+			monitored_runner_.Run();
+		}
+
+		public void SetProgressBar(string message, float fraction_complete)
+		{
+			progress_message_ = message;
+			progress_complete_ = fraction_complete;
+		}
+
+		public void OnGUI()
+		{
+			// Reserve layout space for the progress bar, equal to the space for a
+			// textfield:
+			Rect progress_rect = GUILayoutUtility.GetRect(18, 18, "TextField");
+			EditorGUI.ProgressBar(progress_rect, progress_complete_, progress_message_);
+			EditorGUILayout.Space();
+
+			if (bake_stage_ != BakeStage.kWaitForDoneButton)
+			{
+				if (GUILayout.Button("Cancel"))
+				{
+					if (runner_status_ != null)
+					{
+						runner_status_.CancelTask();
+					}
+				}
+			}
+
+			if (bake_stage_ == BakeStage.kWaitForDoneButton)
+			{
+				if (GUILayout.Button("Done"))
+				{
+					bake_stage_ = BakeStage.kComplete;
+				}
+			}
+		}
+
+		public void Update()
+		{
+
+			// Refresh the Editor GUI to finish the task.
+			UnityEditor.EditorUtility.SetDirty(capture_notification_component_);
+
+			if (bake_stage_ == BakeStage.kRunning)
+			{
+
+				if(!monitored_runner_.IsProcessRunning() && runner_status_.TaskContinuing())
+				{
+					bake_stage_ = BakeStage.kWaitForDoneButton;
+				}
+
+
+				if (runner_status_ != null && !runner_status_.TaskContinuing())
+				{
+					bake_stage_ = BakeStage.kComplete;
+					if (monitored_runner_ != null)
+					{
+						monitored_runner_.InterruptProcess();
+						monitored_runner_ = null;
+					}
+				}
+			}
+
+			// Repaint with updated progress the GUI on each wall-clock time tick.
+			Repaint();
+		}
+
+		public bool IsComplete()
+		{
+			return bake_stage_ == BakeStage.kComplete;
+		}
+	};
 
 	// Implements the Capture Headbox component Editor panel.
 	[CustomEditor(typeof(CaptureHeadbox))]
@@ -259,23 +391,13 @@ namespace Seurat
 		CaptureWindow bake_progress_window_;
 		CaptureBuilder capture_builder_;
 		SeuratPipelineRunner pipeline_runner_;
-		PipelineStatus status_interface_;
+		SeuratRunnerStatus status_interface_;
+		SeuratWindow runner_progress_window_;
 
 		bool draw_capture_;
 		bool draw_pipeline_;
 		bool draw_import_;
 		bool draw_scenebuilder_;
-
-		private bool IsSeuratRunning
-		{
-			get
-			{
-				if (pipeline_runner_ == null)
-					return false;
-				else
-					return pipeline_runner_.IsProcessRunning();
-			}
-		}
 
 		void OnEnable()
 		{
@@ -325,9 +447,10 @@ namespace Seurat
 				capture_builder_ = null;
 				capture_status_ = null;
 			}
-			if (!IsSeuratRunning && pipeline_runner_ != null)
+			if (runner_progress_window_ != null && runner_progress_window_.IsComplete())
 			{
-				pipeline_runner_.InterruptProcess();
+				runner_progress_window_.Close();
+				runner_progress_window_ = null;
 				pipeline_runner_ = null;
 				status_interface_ = null;
 			}
@@ -492,22 +615,13 @@ namespace Seurat
 				Capture();
 			}
 			GUI.enabled = true;
-			if (IsSeuratRunning || string.IsNullOrEmpty(run_exec_.stringValue))
+			if (status_interface_ != null || run_exec_.stringValue.Length == 0)
 			{
 				GUI.enabled = false;
 			}
 			if (GUILayout.Button("Run Seurat"))
 			{
 				RunSeurat();
-			}
-			GUI.enabled = true;
-			if (!IsSeuratRunning)
-			{
-				GUI.enabled = false;
-			}
-			if (GUILayout.Button("Stop Seurat"))
-			{
-				StopSeurat();
 			}
 			GUI.enabled = true;
 			if (GUILayout.Button("Import seurat outputs"))
@@ -574,17 +688,10 @@ namespace Seurat
 				headbox.seurat_exec_,
 				status_interface_);
 
-			pipeline_runner_.Run();
-		}
+			runner_progress_window_ = (SeuratWindow)EditorWindow.GetWindow(typeof(SeuratWindow));
+			runner_progress_window_.SetupStatus(status_interface_);
 
-		public void StopSeurat()
-		{
-			if (IsSeuratRunning)
-			{
-				pipeline_runner_.InterruptProcess();
-				pipeline_runner_ = null;
-				status_interface_ = null;
-			}
+			runner_progress_window_.SetupRunnerProcess(headbox, pipeline_runner_);
 		}
 
 		public void ImportAssets()

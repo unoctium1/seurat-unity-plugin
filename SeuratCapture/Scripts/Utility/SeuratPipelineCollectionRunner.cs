@@ -38,9 +38,17 @@ namespace Seurat
             {
                 while (i < toRun.Length)
                 {
-                    status.SendMessage("Begin processing capture " + (i + 1));
-                    exitCodes[i] = toRun[i].RunProcess(status);
-                    status.SendMessage("Finish processing capture " + (i + 1));
+                    status.SetName("Capture " + (i + 1) + " - ");
+                    if (toRun[i] != null)
+                    {
+                        status.SendMessage("Begin processing capture");
+                        exitCodes[i] = toRun[i].RunProcess(status);
+                        status.SendMessage("Finish processing capture");
+                    }
+                    else
+                    {
+                        status.SendInfoMessage("Inactive in hierarchy, skipping...");
+                    }
                     i++;
                 }
             }
@@ -51,6 +59,7 @@ namespace Seurat
             finally
             {
                 //float totalRunTime = Time.realtimeSinceStartup - startTime;
+                status.SetName("");
                 for (int j = 0; j < toRun.Length; j++)
                 {
                     status.SendMessage("Process " + (j + 1) + " finished with exit code " + exitCodes[j]);
