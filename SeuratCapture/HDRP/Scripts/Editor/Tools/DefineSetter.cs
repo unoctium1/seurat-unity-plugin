@@ -23,14 +23,16 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEngine;
 
 /// <summary>
-/// Creates a defines symbol for the HD render pipeline if it is detected in the graphics settings.
+/// Creates a defines symbol for the render pipeline if it is detected in the graphics settings.
 /// </summary>
 [InitializeOnLoad]
 sealed class DefineSetter
 {
-    private const string Define = "UNITY_RENDER_PIPELINE_HDRP";
+    private const string DefineHDRP = "UNITY_RENDER_PIPELINE_HDRP";
+    private const string DefineURP = "UNITY_RENDER_PIPELINE_URP";
 
     static DefineSetter()
     {
@@ -40,41 +42,47 @@ sealed class DefineSetter
         if (group != BuildTargetGroup.Standalone)
             return;
 
-        if (!IsHdrpValid())
+        if (IsHdrpValid())
         {
-            RemoveDefinesSymbol(BuildTargetGroup.Standalone);
+            AddDefinesSymbol(BuildTargetGroup.Standalone, DefineHDRP);
+            RemoveDefinesSymbol(BuildTargetGroup.Standalone, DefineURP);
+        }
+        else if(IsUrpValid()){
+            AddDefinesSymbol(BuildTargetGroup.Standalone, DefineURP);
+            RemoveDefinesSymbol(BuildTargetGroup.Standalone, DefineHDRP);
         }
         else
         {
-            AddDefinesSymbol(BuildTargetGroup.Standalone);
+            RemoveDefinesSymbol(BuildTargetGroup.Standalone, DefineHDRP);
+            RemoveDefinesSymbol(BuildTargetGroup.Standalone, DefineURP);
         }
     }
 
-    private static void AddDefinesSymbol(BuildTargetGroup target)
+    private static void AddDefinesSymbol(BuildTargetGroup target, string define)
     {
         string defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(target).Trim();
 
         List<string> list = defines.Split(';', ' ').Where(x => !string.IsNullOrEmpty(x)).ToList();
 
-        if (list.Contains(Define))
+        if (list.Contains(define))
             return;
 
-        list.Add(Define);
+        list.Add(define);
         defines = list.Aggregate((a, b) => a + ";" + b);
 
         PlayerSettings.SetScriptingDefineSymbolsForGroup(target, defines);
     }
 
-    private static void RemoveDefinesSymbol(BuildTargetGroup target)
+    private static void RemoveDefinesSymbol(BuildTargetGroup target, string define)
     {
         string defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(target).Trim();
 
         List<string> list = defines.Split(';', ' ').Where(x => !string.IsNullOrEmpty(x)).ToList();
 
-        if (!list.Contains(Define))
+        if (!list.Contains(define))
             return;
 
-        list.Remove(Define);
+        list.Remove(define);
 
         defines = list.Aggregate((a, b) => a + ";" + b);
         PlayerSettings.SetScriptingDefineSymbolsForGroup(target, defines);
@@ -84,6 +92,12 @@ sealed class DefineSetter
     {
         var renderAsset = UnityEngine.Rendering.GraphicsSettings.renderPipelineAsset;
         return renderAsset != null && renderAsset.GetType().Name.Equals("HDRenderPipelineAsset");
+    }
+
+    private static bool IsUrpValid()
+    {
+        var renderAsset = UnityEngine.Rendering.GraphicsSettings.renderPipelineAsset;
+        return renderAsset != null && renderAsset.GetType().Name.Equals("UniversalRenderPipelineAsset");
     }
 
     private static bool IsObsolete(BuildTargetGroup group)
