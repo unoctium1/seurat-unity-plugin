@@ -21,15 +21,14 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using UnityEngine;
 #if UNITY_RENDER_PIPELINE_HDRP
-using UnityEngine.Experimental.Rendering.HDPipeline;
-using UnityEngine.Experimental.Rendering;
+using UnityEngine.Rendering.HighDefinition;
 #endif
 using UnityEngine.Rendering;
 
 //Component that adds a custom render event to the camera data. A work around for the "render with shader" function that doesn't work in HDRP.
 [ExecuteAlways]
 [RequireComponent(typeof(Camera))]
-public class OverrideMaterialRenderer : MonoBehaviour
+public class ReplacementMaterialRenderer : MonoBehaviour
 {
 #if UNITY_RENDER_PIPELINE_HDRP
 

@@ -160,7 +160,7 @@ namespace Seurat
         {
             string input = Path.Combine(output_folder_, "manifest.json");
             string output = Path.Combine(seurat_output_folder_, seurat_output_name_);
-            return "-input_path=" + input + " -output_path=" + (use_cache_ ? output + " -cache_path=" + cache_folder_ + options.GetArgs() : options.GetArgs());
+            return "-input_path=" + input + " -output_path=" + output + (use_cache_ ? " -cache_path=" + cache_folder_ + options.GetArgs() : options.GetArgs());
         }
 
         public void CopyFiles()
@@ -255,7 +255,14 @@ namespace Seurat
             string capture_output_folder = output_folder_;
             if (capture_output_folder.Length <= 0)
             {
+#if UNITY_EDITOR
                 capture_output_folder = FileUtil.GetUniqueTempPathInProject();
+
+#else
+                Debug.LogError("No path was specified");
+                StopCapture();
+                return;
+#endif
             }
             Directory.CreateDirectory(capture_output_folder);
             capture_.BeginCapture(this, capture_output_folder, 1, new CaptureStatus());

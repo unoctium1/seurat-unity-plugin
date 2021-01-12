@@ -235,6 +235,11 @@ namespace Seurat
 
             depth_camera_object_ = new GameObject("Depth Camera");
             depth_camera_ = depth_camera_object_.AddComponent<Camera>();
+            //Checks if we are using HDRP, if so, we need to add additional components.
+#if UNITY_RENDER_PIPELINE_HDRP
+    ReplacementMaterialRenderer overrideMaterialRenderer = depth_camera_object_.AddComponent<ReplacementMaterialRenderer>();
+    overrideMaterialRenderer.EnableOverride();
+#endif
         }
 
         public void EndCapture()
