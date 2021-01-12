@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Unity Seurat Plugin
 
 ### Note: This is a fork of a deprecated Google project. The original readme continues from the section 'Importing Seurat Meshes Into Unity'
