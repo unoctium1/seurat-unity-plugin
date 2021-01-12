@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Unity Seurat Plugin
 
 ### Note: This is a fork of a deprecated Google project. The original readme continues from the section 'Importing Seurat Meshes Into Unity'
@@ -53,6 +54,13 @@ The plugin consists of two monobehaviour scripts for use, [SeuratAutomator.cs](/
   - If using materials, select a folder to put materials in, and then click 'Build Materials'
   - When finished, there will be a reference to the material/materials in the inspector.
 19. Click build scene. If using the CaptureHeadbox, the mesh will be built as a child of the headbox. If using the automator, a copy of the automator will be made with all meshes as children of it. Building with the automator will remove all headbox and automator components from the finished mesh. Building with CaptureHeadbox will not remove anything.
+=======
+# Tutorial 
+Tutorial: https://connect.unity.com/p/google-s-seurat-rendering-hdrp
+
+# Compiled Seurat 
+Compiled Seurat Repo: https://github.com/ddiakopoulos/seura...
+>>>>>>> hdrp
 
 # Importing Seurat Meshes Into Unity
 
